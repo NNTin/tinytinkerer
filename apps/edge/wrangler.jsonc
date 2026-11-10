@@ -30,6 +30,10 @@
     "LITELLM_USER_BUDGET_DURATION": "30d",
     "LITELLM_USER_RPM_LIMIT": "10",
     "LITELLM_USER_TPM_LIMIT": "100000",
+    // Host-provided MCP servers (issue #510, T2): KiPrint, which CanFactory's
+    // embedded assistant offers every user. Its token is the MCP_HOST_TOKENS
+    // secret, never a var.
+    "MCP_HOST_SERVERS": "kiprint.nntin.xyz",
     "SENTRY_ENVIRONMENT": "production"
   },
   // The develop edge backs both the develop frontend (dev.tiny.nntin.xyz) and
@@ -60,6 +64,7 @@
         "LITELLM_USER_BUDGET_DURATION": "30d",
         "LITELLM_USER_RPM_LIMIT": "10",
         "LITELLM_USER_TPM_LIMIT": "100000",
+        "MCP_HOST_SERVERS": "kiprint-preview.nntin.xyz",
         "SENTRY_ENVIRONMENT": "develop"
       }
     }
@@ -70,12 +75,17 @@
   // fallback, and a deployment without it serves 503 "LiteLLM is not configured."
   // — forks must point the var at their own LiteLLM deployment.
   // Optional secret: SENTRY_DSN. SENTRY_RELEASE is set at deploy time from the git SHA.
+  // Optional secret: MCP_HOST_TOKENS, a JSON object mapping a MCP_HOST_SERVERS
+  // hostname to the bearer token the edge sends it, e.g.
+  // '{"kiprint.nntin.xyz":"<token>"}' (prod) / '{"kiprint-preview.nntin.xyz":"<token>"}'
+  // (develop, `--env develop`). Owner-set; the browser never sees it.
   //
   // Optional vars (sensible code-level defaults apply when unset):
   // - MCP_ALLOWED_HOSTS: comma-separated hostnames the MCP proxy may connect to
   //   (e.g. "mcp.example.com,localhost"). Unset/empty keeps the built-in
   //   private-address blocklist (which DNS rebinding can bypass — see
   //   src/routes/mcp.ts); when set, ONLY the listed hosts are reachable.
+  //   MCP_HOST_SERVERS hosts (above) stay reachable either way.
   // - RATE_LIMIT_WINDOW_SECONDS: inbound rate-limit window (default 60).
   // - RATE_LIMIT_AUTH_MAX / RATE_LIMIT_SEARCH_MAX / RATE_LIMIT_MCP_MAX: max
   //   requests per caller per window for the OAuth exchange (default 10),

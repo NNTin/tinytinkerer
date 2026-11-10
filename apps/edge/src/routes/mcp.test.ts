@@ -506,3 +506,141 @@ describe('POST /api/mcp/call', () => {
     expect(body.text).toBe('Part 1.\n Part 2.')
   })
 })
+
+// Host-provided MCP servers (issue #510, T2): an embedding app's server (e.g.
+// CanFactory's KiPrint) is named by hostname in MCP_HOST_SERVERS, and its
+// token lives only in the MCP_HOST_TOKENS secret.
+describe('MCP_HOST_SERVERS host-provided servers', () => {
+  const HOST_URL = 'https://kiprint.example.com/mcp'
+  const HOST_ENV = {
+    MCP_HOST_SERVERS: 'kiprint.example.com',
+    MCP_HOST_TOKENS: JSON.stringify({ 'kiprint.example.com': 'host-secret' })
+  }
+
+  const transportHeaders = async (): Promise<unknown[]> => {
+    const { StreamableHTTPClientTransport } =
+      await import('@modelcontextprotocol/sdk/client/streamableHttp.js')
+    return vi
+      .mocked(StreamableHTTPClientTransport)
+      .mock.calls.map(([, options]) => options?.requestInit?.headers)
+  }
+
+  it('injects the host token on discover and call', async () => {
+    const discover = await post('/api/mcp/discover', { url: HOST_URL }, HEADERS, HOST_ENV)
+    expect(discover.status).toBe(200)
+    const call = await post(
+      '/api/mcp/call',
+      { url: HOST_URL, toolName: 'get_weather', arguments: {} },
+      HEADERS,
+      HOST_ENV
+    )
+    expect(call.status).toBe(200)
+    expect(await transportHeaders()).toEqual([
+      { authorization: 'Bearer host-secret' },
+      { authorization: 'Bearer host-secret' }
+    ])
+  })
+
+  it('drops a browser-supplied bearerToken for a host server', async () => {
+    await post(
+      '/api/mcp/call',
+      { url: HOST_URL, bearerToken: 'from-browser', toolName: 'get_weather', arguments: {} },
+      HEADERS,
+      HOST_ENV
+    )
+    expect(await transportHeaders()).toEqual([{ authorization: 'Bearer host-secret' }])
+  })
+
+  it('sends no token to a host server that has none configured', async () => {
+    await post('/api/mcp/discover', { url: HOST_URL, bearerToken: 'from-browser' }, HEADERS, {
+      MCP_HOST_SERVERS: 'kiprint.example.com'
+    })
+    expect(await transportHeaders()).toEqual([{}])
+  })
+
+  it('stays reachable when MCP_ALLOWED_HOSTS is set and does not list it', async () => {
+    const env = { ...HOST_ENV, MCP_ALLOWED_HOSTS: 'mcp.example.com' }
+    const host = await post('/api/mcp/discover', { url: HOST_URL }, HEADERS, env)
+    expect(host.status).toBe(200)
+    // The allowlist still governs every other host.
+    const other = await post(
+      '/api/mcp/discover',
+      { url: 'https://attacker.example.com/mcp' },
+      HEADERS,
+      env
+    )
+    expect(other.status).toBe(400)
+  })
+
+  it("keeps users' own servers working, with their own token, beside host servers", async () => {
+    const res = await post(
+      '/api/mcp/call',
+      {
+        url: 'https://mcp.example.com/mcp',
+        bearerToken: 'user-secret',
+        toolName: 'get_weather',
+        arguments: {}
+      },
+      HEADERS,
+      HOST_ENV
+    )
+    expect(res.status).toBe(200)
+    expect(await transportHeaders()).toEqual([{ authorization: 'Bearer user-secret' }])
+  })
+
+  it('never injects a token for a host that is in MCP_HOST_TOKENS but not MCP_HOST_SERVERS', async () => {
+    await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' }, HEADERS, {
+      MCP_HOST_TOKENS: JSON.stringify({ 'mcp.example.com': 'should-not-leak' })
+    })
+    expect(await transportHeaders()).toEqual([{}])
+  })
+
+  it('matches host servers case-insensitively', async () => {
+    await post('/api/mcp/discover', { url: 'https://KiPrint.Example.com/mcp' }, HEADERS, {
+      MCP_HOST_SERVERS: ' KIPRINT.example.com ',
+      MCP_HOST_TOKENS: JSON.stringify({ 'KiPrint.Example.COM': 'host-secret' })
+    })
+    expect(await transportHeaders()).toEqual([{ authorization: 'Bearer host-secret' }])
+  })
+
+  it('injects nothing when MCP_HOST_TOKENS is malformed, without failing the route', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const res = await post('/api/mcp/discover', { url: HOST_URL }, HEADERS, {
+      MCP_HOST_SERVERS: 'kiprint.example.com',
+      MCP_HOST_TOKENS: '{not json'
+    })
+    expect(res.status).toBe(200)
+    expect(await transportHeaders()).toEqual([{}])
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining('MCP_HOST_TOKENS'))
+    // The secret's contents are never logged.
+    expect(JSON.stringify(errors.mock.calls)).not.toContain('not json')
+    errors.mockRestore()
+  })
+
+  it('still applies the scheme rules: no plain http to a non-local host server', async () => {
+    const res = await post(
+      '/api/mcp/discover',
+      { url: 'http://kiprint.example.com/mcp' },
+      HEADERS,
+      HOST_ENV
+    )
+    expect(res.status).toBe(400)
+    expect(mockConnect).not.toHaveBeenCalled()
+  })
+
+  it('returns the tool result unmodified, including signed download URLs', async () => {
+    const download = 'https://kiprint.example.com/downloads/signed-abc123'
+    mockCallTool.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify({ url: download, expiresAt: 'soon' }) }],
+      isError: false
+    })
+    const res = await post(
+      '/api/mcp/call',
+      { url: HOST_URL, toolName: 'export_project', arguments: { projectId: 'p' } },
+      HEADERS,
+      HOST_ENV
+    )
+    const body = mcpCallResponseSchema.parse(await res.json())
+    expect(JSON.parse(body.text)).toEqual({ url: download, expiresAt: 'soon' })
+  })
+})

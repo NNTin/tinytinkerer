@@ -18,6 +18,13 @@ import {
 } from './stores/settings-store'
 import { createStatusStore, type StatusState, type StatusStore } from './stores/status-store'
 import {
+  createHostMcpStore,
+  EMPTY_HOST_MCP_STORE,
+  type HostMcpServer,
+  type HostMcpState,
+  type HostMcpStore
+} from './stores/host-mcp-store'
+import {
   createInspectorStore,
   type InspectorState,
   type InspectorStore
@@ -160,6 +167,12 @@ export type BrowserApp = {
      * expired. One value cannot disagree with itself.
      */
     humanPrompts?: HumanPromptStore
+    /**
+     * This app's host-provided MCP servers and their discovery results (issue
+     * #510, T2), or `undefined` for an app that provides none. In memory only:
+     * never written to the user's settings.
+     */
+    hostMcp?: HostMcpStore
   }
   // The app's own tool group, if any (absent for web/widget/mobile). Held here so
   // the tool picker (useToolTree) can read it from context — the same group the
@@ -228,6 +241,10 @@ const BrowserAppContext = createContext<BrowserApp | undefined>(undefined)
 // per real session too.
 const reconciledPluginTools = new WeakSet<BrowserApp>()
 
+// The same once-per-app guard for host-provided MCP discovery (issue #510, T2):
+// StrictMode's double bootstrap must not subscribe to the auth store twice.
+const discoveringHostMcp = new WeakSet<BrowserApp>()
+
 const browserAppError = (): Error =>
   new Error(
     'Browser app has not been created. Call createBrowserApp() and mount <AppBrowserProvider>.'
@@ -280,6 +297,16 @@ export const createBrowserApp = (
      * for an iterative MCP workflow of ten or more sequential calls.
      */
     maxIterations?: number
+    /**
+     * MCP servers this app provides to every user (issue #510, T2).
+     *
+     * Discovered at boot, and again whenever the sign-in token changes, and
+     * registered like a user's servers (`mcp:<id>:<tool>`). They are not stored
+     * in the user's settings, and Settings shows them read-only. There is no
+     * token field: list the server's hostname in the edge's `MCP_HOST_SERVERS`,
+     * and the edge injects its token from the `MCP_HOST_TOKENS` secret.
+     */
+    mcpServers?: readonly HostMcpServer[]
     starterPrompts?: readonly string[]
     // Which document-global effects this app owns (issue #479). Omitted means
     // "owns everything", the correct answer for a document with one app.
@@ -342,6 +369,10 @@ export const createBrowserApp = (
   // capability single-valued: there is no queue to prompt into, so there is
   // nothing for the runtime to offer and nothing for a shell to draw.
   const humanPrompts = (options.humanInput ?? true) ? createHumanPromptStore() : undefined
+  const hostMcp =
+    options.mcpServers && options.mcpServers.length > 0
+      ? createHostMcpStore(shell, options.mcpServers)
+      : undefined
   const chat = createChatStore({
     shell,
     authStore: auth,
@@ -355,6 +386,7 @@ export const createBrowserApp = (
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
     ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
+    ...(hostMcp ? { hostMcp } : {}),
     // The outbound-send coordinator (issue #481), supplied only by an app that
     // declares a disclosure. Reached through a dynamic import so the gate's
     // store and dialog stay out of every shell's startup entry, and closing over
@@ -381,7 +413,8 @@ export const createBrowserApp = (
       settings,
       status,
       inspector,
-      ...(humanPrompts ? { humanPrompts } : {})
+      ...(humanPrompts ? { humanPrompts } : {}),
+      ...(hostMcp ? { hostMcp } : {})
     },
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
@@ -522,6 +555,20 @@ export const initializeBrowserApp = async (
       // it was and is healed by the next write or the next session's sweep.
       .catch(() => {})
   }
+  // Host-provided MCP servers (issue #510, T2): discover now with the hydrated
+  // token, and again whenever it changes, because the edge's MCP routes need a
+  // signed-in caller. Fire-and-forget like the sweep above: a slow or failing
+  // server must not hold up startup, and its card in Settings shows the outcome.
+  const hostMcp = app.stores.hostMcp
+  if (hostMcp && !discoveringHostMcp.has(app)) {
+    discoveringHostMcp.add(app)
+    void hostMcp.getState().discover(app.stores.auth.getState().token)
+    app.stores.auth.subscribe((state, previous) => {
+      if (state.token !== previous.token) {
+        void hostMcp.getState().discover(state.token)
+      }
+    })
+  }
   // Restore Sentry for returning users who previously opted in.
   //
   // Owner-only (issue #479). Consent is one module-global flag, but
@@ -549,6 +596,11 @@ export const useAuthStore = <T>(selector: (state: AuthState) => T): T =>
 
 export const useChatStore = <T>(selector: (state: ChatState) => T): T =>
   useStore(useBrowserApp().stores.chat, selector)
+
+// An app with no host-provided MCP servers — or a surface rendered outside any
+// app, as component tests do — reads an empty, never-changing store.
+export const useHostMcp = <T>(selector: (state: HostMcpState) => T): T =>
+  useStore(useOptionalBrowserApp()?.stores.hostMcp ?? EMPTY_HOST_MCP_STORE, selector)
 
 // NOTE: no `useChatStoreWithEquality` sibling lives here despite the naming
 // symmetry with the hooks above — see surfaces.tsx, which defines its own

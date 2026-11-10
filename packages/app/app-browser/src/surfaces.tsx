@@ -6,8 +6,6 @@ import {
   type Turn
 } from '@tinytinkerer/app-core'
 import {
-  EDGE_ROUTE_PATHS,
-  mcpDiscoveryResultSchema,
   type AgentType,
   type ChatEvent,
   type McpDiscoveryResult,
@@ -30,7 +28,14 @@ import { usePluginModules } from './plugins/use-plugin-modules'
 import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
-import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
+import {
+  useAuthStore,
+  useBrowserApp,
+  useChatStore,
+  useHostMcp,
+  useSettingsStore,
+  useStatusStore
+} from './app'
 import { preSendDisclosureStoreFor } from './pre-send-disclosure'
 import { MAX_CONCURRENT_RUNS } from './stores/chat-store'
 import { formatCooldown, useAppSignIn, useChatCooldown, useGitHubOAuth } from './hooks'
@@ -39,8 +44,6 @@ import { useModels, type ModelEntry } from './models'
 import { readOAuthCallbackParams } from './oauth-callback-url'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
-import { createEdgeFetch } from './runtime/edge-fetch'
-import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
 import { markOAuthCallbackHandled } from './telemetry/oauth-callback-handled'
 
 export type ChatSurfaceController = {
@@ -134,6 +137,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const token = useAuthStore((state) => state.token)
   const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
   const mcpServers = useSettingsStore((state) => state.mcpServers)
+  const hostMcpServers = useHostMcp((state) => state.servers)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
 
   // Still tracked internally (below: clears the refusal notice and resets the
@@ -216,9 +220,14 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     previousTurnsRef.current = reconciled
     return reconciled
   }, [events])
+  // Host-provided servers (issue #510, T2) last, so on an id clash the app's
+  // name wins, matching which server's tools the runtime registered.
   const serverNameById = useMemo(
-    () => new Map(mcpServers.map((server) => [server.id, server.name])),
-    [mcpServers]
+    () =>
+      new Map(
+        [...mcpServers, ...hostMcpServers].map((server) => [server.id, server.name] as const)
+      ),
+    [mcpServers, hostMcpServers]
   )
 
   // Plugin-contributed activity summarizers, keyed by tool id. Derived from the
@@ -555,65 +564,10 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
 
   const refreshMcpServer = async (server: McpServerConfig): Promise<void> => {
     await clearMcpDiscovery(server.id)
-    try {
-      const edgeFetch = createEdgeFetch(shell.config.edgeBaseUrl, () => token)
-      const res = await edgeFetch(
-        EDGE_ROUTE_PATHS.mcpDiscover,
-        {
-          url: server.url,
-          bearerToken: server.bearerToken
-        },
-        { area: 'mcp.discover' }
-      )
-      if (!res.ok) {
-        const errBody =
-          (await parseJsonWithTelemetry<Record<string, unknown> | undefined>(
-            {
-              area: 'mcp.discover',
-              origin: 'edge',
-              method: 'POST',
-              url: res.url
-            },
-            res.clone()
-          ).catch(() => undefined)) ?? {}
-        const errMsg = (errBody as { error?: string }).error ?? `HTTP ${res.status}`
-        await setMcpDiscovery({
-          serverId: server.id,
-          serverName: server.name,
-          tools: [],
-          syncedAt: new Date().toISOString(),
-          error: errMsg
-        })
-        return
-      }
-      const metadata = {
-        area: 'mcp.discover' as const,
-        origin: 'edge' as const,
-        method: 'POST',
-        url: res.url
-      }
-      const raw = await parseJsonWithTelemetry<unknown>(metadata, res)
-      const result = parseWithTelemetry(
-        metadata,
-        'schema_error',
-        'MCP discovery response did not match schema',
-        () =>
-          mcpDiscoveryResultSchema.parse({
-            ...(raw as object),
-            serverId: server.id
-          }),
-        res
-      )
-      await setMcpDiscovery(result)
-    } catch (e) {
-      await setMcpDiscovery({
-        serverId: server.id,
-        serverName: server.name,
-        tools: [],
-        syncedAt: new Date().toISOString(),
-        error: e instanceof Error ? e.message : 'Discovery failed'
-      })
-    }
+    // Lazy: only a Settings refresh reaches it, so the chat surface's chunk
+    // does not carry discovery (the IDE folds this surface into its stage).
+    const { discoverMcpServer } = await import('./runtime/mcp-discovery')
+    await setMcpDiscovery(await discoverMcpServer(shell.config.edgeBaseUrl, token, server))
   }
 
   return {

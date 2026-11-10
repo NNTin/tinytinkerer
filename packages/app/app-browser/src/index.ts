@@ -42,6 +42,7 @@ export type {
   AppInstructionBoundary,
   AppToolResultRecord
 } from './app-assistant-policy'
+export type { HostMcpServer } from './stores/host-mcp-store'
 export type { AssistantContentProps } from './assistant-content'
 export { assistantContentPlugins } from './assistant-content'
 export {

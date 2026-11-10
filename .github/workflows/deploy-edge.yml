@@ -68,6 +68,10 @@ jobs:
           LITELLM_USER_KEY_SECRET: ${{ secrets.LITELLM_USER_KEY_SECRET }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN_EDGE }}
+          # Host-provided MCP server tokens (issue #510, T2), one JSON object
+          # for both edges, e.g. {"kiprint.nntin.xyz":"…","kiprint-preview.nntin.xyz":"…"}.
+          # Each edge injects only for the hostnames in its own MCP_HOST_SERVERS.
+          MCP_HOST_TOKENS: ${{ secrets.MCP_HOST_TOKENS }}
         run: |
           secrets_file="$RUNNER_TEMP/cloudflare-worker-secrets.env"
 
@@ -90,6 +94,10 @@ jobs:
 
           if [ -n "$SENTRY_DSN" ]; then
             printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN" >> "$secrets_file"
+          fi
+
+          if [ -n "$MCP_HOST_TOKENS" ]; then
+            printf 'MCP_HOST_TOKENS=%s\n' "$MCP_HOST_TOKENS" >> "$secrets_file"
           fi
 
           echo "path=$secrets_file" >> "$GITHUB_OUTPUT"

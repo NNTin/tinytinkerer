@@ -18,7 +18,7 @@ import { mcpCallRoute, mcpDiscoverRoute } from '../openapi/routes'
 // connect-time IP check (unavailable in Cloudflare Workers without a
 // third-party DNS-over-HTTPS call) or Cloudflare's built-in SSRF guardrails.
 // Deployments that need rebinding-proof behaviour should set MCP_ALLOWED_HOSTS
-// (see parseMcpAllowedHosts below), which replaces this blocklist with a strict
+// (see parseHostnameList below), which replaces this blocklist with a strict
 // host allowlist.
 const METADATA_HOSTNAMES = new Set([
   'metadata.google.internal', // GCP
@@ -61,12 +61,13 @@ const isPrivateHostname = (hostname: string): boolean => {
 }
 
 /**
- * Parse the MCP_ALLOWED_HOSTS binding: comma-separated hostnames (no scheme,
- * no port), case-insensitive. An unset/empty binding yields an empty set,
- * which {@link validateMcpUrl} treats as "allowlist not configured" — the
- * static private-address blocklist applies instead.
+ * Parse a hostname-list binding (MCP_ALLOWED_HOSTS, MCP_HOST_SERVERS):
+ * comma-separated hostnames (no scheme, no port), case-insensitive. An
+ * unset/empty binding yields an empty set. For MCP_ALLOWED_HOSTS that means
+ * "allowlist not configured" — the static private-address blocklist applies
+ * instead (see {@link validateMcpUrl}).
  */
-const parseMcpAllowedHosts = (raw: string | undefined): Set<string> =>
+const parseHostnameList = (raw: string | undefined): Set<string> =>
   new Set(
     (raw ?? '')
       .split(',')
@@ -79,22 +80,61 @@ const parseMcpAllowedHosts = (raw: string | undefined): Set<string> =>
       .filter(Boolean)
   )
 
-const validateMcpUrl = (raw: string, allowedHosts: Set<string>): boolean => {
+/**
+ * Parse the MCP_HOST_TOKENS secret: a JSON object mapping hostname → bearer
+ * token, e.g. `{"kiprint.nntin.xyz":"<token>"}`. Keys are matched
+ * case-insensitively. Entries whose value is not a non-empty string are
+ * ignored. A malformed secret is logged (without its contents) and injects
+ * nothing. The calls then reach the host server unauthenticated and fail
+ * there, rather than taking down every MCP route.
+ */
+const parseMcpHostTokens = (raw: string | undefined): Map<string, string> => {
+  const tokens = new Map<string, string>()
+  if (!raw?.trim()) return tokens
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    parsed = undefined
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    console.error('[mcp] MCP_HOST_TOKENS is not a JSON object; no host tokens are injected')
+    return tokens
+  }
+  for (const [host, token] of Object.entries(parsed)) {
+    if (typeof token === 'string' && token.length > 0) {
+      tokens.set(host.trim().toLowerCase(), token)
+    }
+  }
+  return tokens
+}
+
+// The scheme rules shared by every MCP URL, host-provided or not: http(s)
+// only, and plain http only for localhost/127.0.0.1 (local dev). Returns the
+// bracket-stripped, lower-cased hostname, or null when the URL is unusable.
+const mcpUrlHostname = (raw: string): string | null => {
   let url: URL
   try {
     url = new URL(raw)
   } catch {
-    return false
+    return null
   }
 
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
 
-  const hostname = url.hostname.replace(/^\[|\]$/g, '')
+  const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
 
-  // http is allowed only for localhost/127.0.0.1 (local dev)
   if (url.protocol === 'http:' && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    return false
+    return null
   }
+
+  return hostname
+}
+
+const validateMcpUrl = (raw: string, allowedHosts: Set<string>): boolean => {
+  const hostname = mcpUrlHostname(raw)
+  if (hostname === null) return false
+  const isHttp = new URL(raw).protocol === 'http:'
 
   // A configured allowlist is authoritative: ONLY listed hosts pass (including
   // localhost — list it explicitly if local dev must work under an allowlist).
@@ -103,12 +143,48 @@ const validateMcpUrl = (raw: string, allowedHosts: Set<string>): boolean => {
   // privately.
   if (allowedHosts.size > 0) return allowedHosts.has(hostname)
 
-  if (url.protocol === 'http:') return true
+  if (isHttp) return true
 
   // https with no allowlist configured: block private/internal IP literals
   if (isPrivateHostname(hostname)) return false
 
   return true
+}
+
+type McpTarget = { ok: true; bearerToken: string | undefined } | { ok: false }
+
+/**
+ * Decide whether the proxy may connect to `url`, and with which bearer token.
+ *
+ * A **host server** — its hostname is listed in MCP_HOST_SERVERS, issue #510
+ * T2 — is an MCP server an embedding app (e.g. CanFactory's KiPrint) provides
+ * to every user:
+ *
+ * - it is always reachable, even when MCP_ALLOWED_HOSTS is set, so trusting it
+ *   never requires an exclusive allowlist that would block every user's own
+ *   servers;
+ * - its token comes ONLY from MCP_HOST_TOKENS. Whatever `bearerToken` the
+ *   browser sent is dropped, so a host token never has to exist in the browser,
+ *   and a caller cannot swap in its own. Unlisted hosts are never injected.
+ *
+ * Every other URL keeps today's behaviour: the MCP_ALLOWED_HOSTS allowlist or
+ * the private-address blocklist, and the caller's own `bearerToken`.
+ */
+const resolveMcpTarget = (
+  env: Bindings,
+  url: string,
+  callerBearerToken: string | undefined
+): McpTarget => {
+  const hostname = mcpUrlHostname(url)
+  if (hostname === null) return { ok: false }
+
+  if (parseHostnameList(env.MCP_HOST_SERVERS).has(hostname)) {
+    return { ok: true, bearerToken: parseMcpHostTokens(env.MCP_HOST_TOKENS).get(hostname) }
+  }
+
+  return validateMcpUrl(url, parseHostnameList(env.MCP_ALLOWED_HOSTS))
+    ? { ok: true, bearerToken: callerBearerToken }
+    : { ok: false }
 }
 
 const toMcpHeaders = (bearerToken: string | undefined): Record<string, string> =>
@@ -137,7 +213,8 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
 
     const { url, bearerToken } = c.req.valid('json')
 
-    if (!validateMcpUrl(url, parseMcpAllowedHosts(c.env.MCP_ALLOWED_HOSTS))) {
+    const target = resolveMcpTarget(c.env, url, bearerToken)
+    if (!target.ok) {
       return c.json(
         edgeErrorResponseSchema.parse({
           error: 'Invalid or disallowed MCP server URL'
@@ -147,7 +224,9 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     }
 
     const client = new Client({ name: 'tinytinkerer-edge', version: '1.0.0' })
-    const transport = makeTransport(url, bearerToken)
+    // A fresh transport per request: the proxy is stateless, so a server must
+    // not rely on an `Mcp-Session-Id` surviving between discover and call.
+    const transport = makeTransport(url, target.bearerToken)
 
     try {
       await client.connect(transport)
@@ -198,7 +277,8 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
 
     const { url, bearerToken, toolName, arguments: toolArgs } = c.req.valid('json')
 
-    if (!validateMcpUrl(url, parseMcpAllowedHosts(c.env.MCP_ALLOWED_HOSTS))) {
+    const target = resolveMcpTarget(c.env, url, bearerToken)
+    if (!target.ok) {
       return c.json(
         edgeErrorResponseSchema.parse({
           error: 'Invalid or disallowed MCP server URL'
@@ -208,7 +288,9 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     }
 
     const client = new Client({ name: 'tinytinkerer-edge', version: '1.0.0' })
-    const transport = makeTransport(url, bearerToken)
+    // A fresh transport per request: the proxy is stateless, so a server must
+    // not rely on an `Mcp-Session-Id` surviving between discover and call.
+    const transport = makeTransport(url, target.bearerToken)
 
     try {
       await client.connect(transport)

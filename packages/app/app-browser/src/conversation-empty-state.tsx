@@ -1,7 +1,7 @@
 import { isPluginEnabled } from '@tinytinkerer/app-core'
 import type { PluginManifest } from '@tinytinkerer/contracts'
 import { useMemo } from 'react'
-import { useSettingsStore } from './app'
+import { useHostMcp, useSettingsStore } from './app'
 import { useBrowserApp } from './app'
 import { usePluginModules } from './plugins/use-plugin-modules'
 
@@ -80,6 +80,8 @@ export const useStarterPrompts = (override?: readonly string[]): string[] => {
   const pluginModules = usePluginModules()
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const mcpServers = useSettingsStore((state) => state.mcpServers)
+  // Host-provided servers are always enabled (issue #510, T2).
+  const hasHostMcpServer = useHostMcp((state) => state.servers.length > 0)
 
   return useMemo(
     () =>
@@ -87,9 +89,9 @@ export const useStarterPrompts = (override?: readonly string[]): string[] => {
         manifests: pluginModules.map((mod) => mod.manifest),
         ...(starterPrompts ? { appStarterPrompts: starterPrompts } : {}),
         pluginActivation,
-        hasEnabledMcpServer: mcpServers.some((server) => server.enabled)
+        hasEnabledMcpServer: hasHostMcpServer || mcpServers.some((server) => server.enabled)
       }),
-    [starterPrompts, pluginModules, pluginActivation, mcpServers]
+    [starterPrompts, pluginModules, pluginActivation, mcpServers, hasHostMcpServer]
   )
 }
 

@@ -98,7 +98,8 @@ vi.mock('../src/app.js', () => ({
     selector: (state: { showReasoningActivity: boolean; mcpServers: unknown[] }) => unknown
   ) => selector({ showReasoningActivity: false, mcpServers: [] }),
   useStatusStore: (selector: (state: { refresh: () => Promise<void> }) => unknown) =>
-    selector({ refresh: () => Promise.resolve() })
+    selector({ refresh: () => Promise.resolve() }),
+  useHostMcp: (selector: (state: { servers: unknown[] }) => unknown) => selector({ servers: [] })
 }))
 
 vi.mock('../src/status.js', () => ({

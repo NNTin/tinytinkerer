@@ -14,6 +14,8 @@ import {
 import { MarkdownDocument } from './markdown-document'
 import { usePreSendDisclosureStore } from './pre-send-disclosure'
 import { useSettingsSurfaceController } from './surfaces'
+import { useHostMcp } from './app'
+import type { HostMcpServer } from './stores/host-mcp-store'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 import { useDialogFocus, useDialogEscape } from './use-dialog-focus'
 
@@ -350,6 +352,51 @@ const emptyForm = (): McpServerFormState => ({
   bearerToken: ''
 })
 
+type McpDiscoveryEntry = ReturnType<typeof useSettingsSurfaceController>['mcpDiscovery'][string]
+
+// The sync status line both kinds of server card show under the URL.
+const mcpSyncBadge = (
+  isSyncing: boolean,
+  discovery: McpDiscoveryEntry | undefined,
+  unsynced = 'Not synced'
+): { syncBadge: string; badgeClass: string } =>
+  isSyncing
+    ? { syncBadge: 'Syncing…', badgeClass: 'text-amber-700' }
+    : discovery?.error
+      ? { syncBadge: discovery.error, badgeClass: 'text-rose-600' }
+      : discovery
+        ? {
+            syncBadge: `${discovery.tools.length} tool${discovery.tools.length !== 1 ? 's' : ''}`,
+            badgeClass: 'text-emerald-700'
+          }
+        : { syncBadge: unsynced, badgeClass: 'text-[var(--muted)]' }
+
+// A server the app provides (issue #510, T2): shown so the user knows where its
+// tools come from, but with nothing to toggle, edit or remove. It is part of the
+// app, not of the user's settings, and its token lives on the edge.
+const HostMcpServerCard = ({
+  server,
+  discovery,
+  isSyncing
+}: {
+  server: HostMcpServer
+  discovery: McpDiscoveryEntry | undefined
+  isSyncing: boolean
+}) => {
+  const { syncBadge, badgeClass } = mcpSyncBadge(isSyncing, discovery, 'Sign in to load its tools')
+  return (
+    <div
+      className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 text-sm"
+      data-testid="host-mcp-server"
+    >
+      <p className="truncate font-medium text-[var(--text-strong)]">{server.name}</p>
+      <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{server.url}</p>
+      <p className={`mt-0.5 text-xs ${badgeClass}`}>{syncBadge}</p>
+      <p className="mt-0.5 text-xs text-[var(--muted)]">Provided by this app</p>
+    </div>
+  )
+}
+
 const McpServerCard = ({
   server,
   discovery,
@@ -360,7 +407,7 @@ const McpServerCard = ({
   onSave
 }: {
   server: McpServerConfig
-  discovery: ReturnType<typeof useSettingsSurfaceController>['mcpDiscovery'][string] | undefined
+  discovery: McpDiscoveryEntry | undefined
   isSyncing: boolean
   onToggle: (enabled: boolean) => void
   onRefresh: () => void
@@ -377,21 +424,7 @@ const McpServerCard = ({
     bearerToken: server.bearerToken ?? ''
   })
 
-  const syncBadge = isSyncing
-    ? 'Syncing…'
-    : discovery?.error
-      ? discovery.error
-      : discovery
-        ? `${discovery.tools.length} tool${discovery.tools.length !== 1 ? 's' : ''}`
-        : 'Not synced'
-
-  const badgeClass = isSyncing
-    ? 'text-amber-700'
-    : discovery?.error
-      ? 'text-rose-600'
-      : discovery
-        ? 'text-emerald-700'
-        : 'text-[var(--muted)]'
+  const { syncBadge, badgeClass } = mcpSyncBadge(isSyncing, discovery)
 
   const handleSave = () => {
     const patch: Partial<Omit<McpServerConfig, 'id'>> = {}
@@ -500,6 +533,9 @@ export const McpServerList = () => {
     setMcpServerEnabled,
     refreshMcpServer
   } = useSettingsSurfaceController()
+  const hostServers = useHostMcp((state) => state.servers)
+  const hostDiscovery = useHostMcp((state) => state.discovery)
+  const hostSyncing = useHostMcp((state) => state.syncing)
 
   const [addForm, setAddForm] = useState<McpServerFormState | null>(null)
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set())
@@ -531,6 +567,14 @@ export const McpServerList = () => {
 
   return (
     <div className="space-y-2">
+      {hostServers.map((server) => (
+        <HostMcpServerCard
+          key={server.id}
+          server={server}
+          discovery={hostDiscovery[server.id]}
+          isSyncing={hostSyncing.includes(server.id)}
+        />
+      ))}
       {mcpServers.length === 0 ? (
         <p className="text-xs text-[var(--muted)]">No MCP servers added yet.</p>
       ) : (

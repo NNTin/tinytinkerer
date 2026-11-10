@@ -45,6 +45,18 @@ export type Bindings = {
    * (see routes/mcp.ts).
    */
   MCP_ALLOWED_HOSTS?: string
+  /**
+   * Comma-separated hostnames of host-provided MCP servers (issue #510, T2),
+   * e.g. KiPrint for CanFactory. Always reachable, even when MCP_ALLOWED_HOSTS
+   * is set, and the only hosts eligible for MCP_HOST_TOKENS injection.
+   */
+  MCP_HOST_SERVERS?: string
+  /**
+   * Secret: JSON object mapping a MCP_HOST_SERVERS hostname to the bearer
+   * token the edge sends it, e.g. `{"kiprint.nntin.xyz":"<token>"}`. The
+   * browser's own `bearerToken` is dropped for these hosts.
+   */
+  MCP_HOST_TOKENS?: string
   /** Inbound rate-limit window in seconds (default 60). See lib/inbound-rate-limit.ts. */
   RATE_LIMIT_WINDOW_SECONDS?: string
   /** Max OAuth code exchanges per caller per window (default 10; '0' disables). */
