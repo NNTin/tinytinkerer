@@ -80,6 +80,8 @@ try {
   })
   const hostManifestPath = join(hostDir, 'package.json')
   const hostManifest = JSON.parse(readFileSync(hostManifestPath, 'utf8'))
+  // The template pins an exact version (the workspace requires exact specifiers);
+  // the run always replaces it with the tarball or the requested version.
   hostManifest.dependencies[PACKAGE_NAME] = packageSpec
   writeFileSync(hostManifestPath, `${JSON.stringify(hostManifest, null, 2)}\n`)
 

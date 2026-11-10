@@ -9,7 +9,7 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@nntin/tinytinkerer-embed": "EMBED_PACKAGE_SPEC",
+    "@nntin/tinytinkerer-embed": "0.1.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
