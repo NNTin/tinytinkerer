@@ -44,7 +44,6 @@ import { useModels, type ModelEntry } from './models'
 import { readOAuthCallbackParams } from './oauth-callback-url'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
-import { discoverMcpServer } from './runtime/mcp-discovery'
 import { markOAuthCallbackHandled } from './telemetry/oauth-callback-handled'
 
 export type ChatSurfaceController = {
@@ -565,6 +564,9 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
 
   const refreshMcpServer = async (server: McpServerConfig): Promise<void> => {
     await clearMcpDiscovery(server.id)
+    // Lazy: only a Settings refresh reaches it, so the chat surface's chunk
+    // does not carry discovery (the IDE folds this surface into its stage).
+    const { discoverMcpServer } = await import('./runtime/mcp-discovery')
     await setMcpDiscovery(await discoverMcpServer(shell.config.edgeBaseUrl, token, server))
   }
 

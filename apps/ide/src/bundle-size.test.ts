@@ -76,6 +76,10 @@ describe('IDE bundle regression guard', () => {
     // lightbox action class) bring it to 259.891 kB (develop 259.809) — under
     // the ceiling without a raise. This build keeps identifier names, so a new
     // shared module costs its names here even when it saves bytes elsewhere.
+    // Issue #510 T2's host-provided MCP servers add their names to the chat
+    // surface; the Settings-only discovery path is loaded lazily to pay for it,
+    // leaving 259.994 kB. Effectively no headroom: the next growth here needs a
+    // saving or a deliberate raise.
     expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(260)
     expect((codeMirror?.code?.length ?? 0) / 1024).toBeLessThan(800)
   })
