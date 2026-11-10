@@ -1,0 +1,61 @@
+{
+  "name": "@nntin/tinytinkerer-embed",
+  "version": "0.1.0",
+  "description": "TinyTinkerer's browser chat runtime (ChatApp, createBrowserApp, app tool groups, plugin catalogue) as one prebuilt ESM package for embedding hosts.",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NNTin/tinytinkerer.git",
+    "directory": "packages/app/embed"
+  },
+  "type": "module",
+  "sideEffects": [
+    "./dist/embed.css",
+    "./dist/styles.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./embed.css": "./dist/embed.css",
+    "./styles.css": "./dist/styles.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build": "pnpm -w generate:privacy-policy && vite build && node ./scripts/build-types.mjs && node ./scripts/check-package.mjs",
+    "lint": "eslint src tests",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "pnpm -w generate:privacy-policy && tsc -p tsconfig.json",
+    "acceptance": "node ./acceptance/run.mjs"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.0",
+    "@tinytinkerer/app-browser": "workspace:*",
+    "@tinytinkerer/app-shell": "workspace:*",
+    "@tinytinkerer/catalogue": "workspace:*",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "tailwindcss": "4.3.0",
+    "typescript": "6.0.3",
+    "vite": "8.1.6",
+    "vitest": "4.1.12",
+    "zod": "4.6.7"
+  }
+}

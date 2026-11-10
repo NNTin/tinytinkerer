@@ -24,13 +24,22 @@
 // Matches staged paths like `packages/.../src/x.ts` or `apps/web/tests/y.tsx`.
 const ESLINT_SOURCE_RE = /(?:^|\/)(?:apps|packages)\/.*\/(?:src|tests)\/.*\.(?:ts|tsx|mts|cts)$/
 
+// The embed package's acceptance host (issue #510, T1) is a standalone npm
+// project, not a workspace: it imports @nntin/tinytinkerer-embed, which is only
+// installed in the throwaway copy acceptance/run.mjs builds. Its type check is
+// that run's `tsc` against the PUBLISHED declarations; the workspace's
+// type-aware ESLint cannot resolve the package and must not see it.
+const ESLINT_EXCLUDED_RE = /(?:^|\/)packages\/app\/embed\/acceptance\/host\//
+
 // Quote each path so lint-staged's argv parser keeps filenames with spaces intact.
 const toArgs = (files) => files.map((file) => JSON.stringify(file)).join(' ')
 
 export default (stagedFiles) => {
   const tasks = []
 
-  const eslintTargets = stagedFiles.filter((file) => ESLINT_SOURCE_RE.test(file))
+  const eslintTargets = stagedFiles.filter(
+    (file) => ESLINT_SOURCE_RE.test(file) && !ESLINT_EXCLUDED_RE.test(file)
+  )
   if (eslintTargets.length > 0) {
     tasks.push(`eslint --fix ${toArgs(eslintTargets)}`)
   }

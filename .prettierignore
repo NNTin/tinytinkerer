@@ -14,6 +14,11 @@ coverage
 .vercel
 .wrangler
 
+# The embed package's build bookkeeping and acceptance-host output (issue #510,
+# T1) — git-ignored by packages/app/embed's own .gitignore files.
+packages/app/embed/.build
+packages/app/embed/acceptance/.output
+
 # Playwright run artifacts — git-ignores them via packages/e2e/.gitignore, which
 # Prettier does not read (it only consults the root ignore files).
 test-results

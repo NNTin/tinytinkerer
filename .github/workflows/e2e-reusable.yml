@@ -62,6 +62,29 @@ jobs:
         with:
           name: shells-dist
           path: apps/host/dist
+
+      - name: Download embed acceptance host
+        uses: actions/download-artifact@v7
+        with:
+          name: embed-acceptance-dist
+          path: packages/app/embed/acceptance/.output/dist
+          if-no-files-found: error
+          retention-days: 1
+
+      # The embed package acceptance host (issue #510, T1): a fresh npm project
+      # that installs the packed @nntin/tinytinkerer-embed tarball, typechecks
+      # and builds itself. tests/embed-package.e2e.ts serves its output.
+      - name: Build embed package acceptance host
+        run: |
+          pnpm exec turbo run build --filter=@nntin/tinytinkerer-embed
+          pnpm --filter @nntin/tinytinkerer-embed acceptance
+
+      - name: Upload embed acceptance host
+        uses: actions/upload-artifact@v6
+        with:
+          name: embed-acceptance-dist
+          path: packages/app/embed/acceptance/.output/dist
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
 

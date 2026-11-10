@@ -1,0 +1,24 @@
+/*
+ * The component stylesheet a host loads beside embed.css.
+ *
+ * Two parts, in this order:
+ *
+ * 1. The Tailwind theme and the utilities the bundled components render with,
+ *    PRE-COMPILED here — so a host needs no Tailwind, and if it has its own,
+ *    needs no `@source` pointing into this package. Preflight is deliberately
+ *    excluded, as on the documentation site (apps/docs/src/css/tailwind.css):
+ *    the scoped baseline in embed.css replaces it inside `.tt-app-embed`, and
+ *    a global reset would restyle the host.
+ * 2. app-browser's component styles and design tokens.
+ *
+ * The scan covers exactly the sources compiled into this bundle.
+ */
+@import 'tailwindcss/theme.css';
+@import 'tailwindcss/utilities.css';
+@import '@tinytinkerer/app-browser/styles.css';
+
+@source '../../app-browser/src';
+@source '../../app-shell/src';
+@source '../../../content';
+@source '../../../plugins';
+@source not '../../../**/tests';

@@ -489,6 +489,25 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
+  // The published embed package (issue #510, T1). Stated positively for the
+  // same reason as the catalogue: with no default-deny, an unlisted package's
+  // imports are unconstrained. Its entry re-exports a curated public surface of
+  // exactly these three packages, and must never reach past them into a
+  // concrete stage or plugin.
+  if (sourcePkg.name === '@nntin/tinytinkerer-embed') {
+    const allowed = new Set([
+      '@nntin/tinytinkerer-embed',
+      '@tinytinkerer/app-browser',
+      '@tinytinkerer/app-shell',
+      '@tinytinkerer/catalogue'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: the embed package may import only app-browser, app-shell, the plugin catalogue, and embed-local modules (${targetPkg.name})`
+      )
+    }
+  }
+
   if (isPluginPackage(sourcePkg)) {
     const allowed = new Set([sourcePkg.name, '@tinytinkerer/contracts'])
     if (!allowed.has(targetPkg.name)) {
