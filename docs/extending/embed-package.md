@@ -187,16 +187,23 @@ from KiPrint.
 - **A link allowlist:** if your policy demotes links it cannot verify (in `prepareRenderedContent`
   and `finalizeAnswer`), allow the links your server actually returned. Each result from a host
   server reaches the policy as an `AppToolResultRecord` with `source: { kind: 'mcp', groupId: '<id>' }`,
-  and its `output.text` is the server's text exactly as sent:
+  and its `output` is the edge's response: the server's `text` exactly as sent, and `isError`:
 
 ```ts
 import type { AppToolResultRecord } from '@nntin/tinytinkerer-embed'
 
-// The KiPrint URLs this turn's successful results actually returned.
+// The KiPrint URLs this turn's results actually returned, tool errors excluded.
 const kiprintLinks = (results: readonly AppToolResultRecord[]): Set<string> =>
   new Set(
     results
-      .filter((result) => result.source?.kind === 'mcp' && result.source.groupId === 'kiprint')
+      // A tool error (`isError: true`) still arrives as a completed result, and its
+      // text can echo a model-chosen input, so it must never authorize a link.
+      .filter(
+        (result) =>
+          result.source?.kind === 'mcp' &&
+          result.source.groupId === 'kiprint' &&
+          (result.output as { isError?: unknown }).isError !== true
+      )
       .flatMap((result) => {
         const text = (result.output as { text?: unknown }).text
         return typeof text === 'string' ? (text.match(/https:\/\/[^\s"'<>)]+/g) ?? []) : []
@@ -206,8 +213,14 @@ const kiprintLinks = (results: readonly AppToolResultRecord[]): Set<string> =>
 ```
 
 Keep a link when its URL is in this set, and demote it otherwise. Match the exact URLs, not just
-the host: an answer could otherwise carry a KiPrint path the server never issued. Only successful
-results reach the policy, so a failed call can never authorize a link. See
+the host: an answer could otherwise carry a KiPrint path the server never issued.
+
+The `isError` check is required, and only the filter provides it. The runtime passes the policy
+every call that did not throw. A call that failed in transport, or that the edge rejected, never
+reaches it. But when the MCP server itself reports a tool failure, the edge answers `200` with
+`isError: true`, and that result does reach the policy. An error message that echoes its input,
+such as `invalid project https://kiprint.nntin.xyz/downloads/<forged>`, would otherwise authorize
+a link the model or an injected instruction chose. See
 [MCP integration](../plugins-and-tools/mcp-integration.md#results-and-links) for more on results and links.
 
 ## Sign-in
