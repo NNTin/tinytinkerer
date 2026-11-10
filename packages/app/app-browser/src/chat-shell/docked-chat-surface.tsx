@@ -19,7 +19,7 @@ import {
 } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
 import { SpeechToggleButton } from './speech-toggle-button'
-import { surfaceButtonClass } from './surface-button'
+import { SIGN_IN_UNAVAILABLE_NOTICE, surfaceButtonClass } from './surface-button'
 import type { ChatLoadingComponent } from './floating-chat-surface'
 
 /*
@@ -459,7 +459,7 @@ export const DockedChatSurface = ({
           ) : null}
           {signInUnavailable ? (
             <p role="alert" className="mt-2 text-xs text-rose-600">
-              Sign-in is unavailable in this deployment. You can keep asking questions anonymously.
+              {SIGN_IN_UNAVAILABLE_NOTICE}
             </p>
           ) : null}
         </form>

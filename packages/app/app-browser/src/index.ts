@@ -4,13 +4,13 @@ export { LoadingStatusPanel } from './loading-status-panel'
 export type { LoadingStatusPanelProps, LoadingStatusPanelVariant } from './loading-status-panel'
 export {
   canStartGitHubOAuth,
-  completeGitHubOAuth,
   completeGitHubOAuthCallback,
   consumeGitHubOAuthReturnUrl,
   GITHUB_OAUTH_CALLBACK_PATH,
   isSignInRequired,
   startGitHubOAuth
 } from './auth'
+export { completeGitHubOAuth } from './host-oauth-callback'
 export { TINYTINKERER_BRAND_ASSET_URLS } from '@tinytinkerer/brand-assets'
 export { useGitHubUser } from './github-user'
 export type { GitHubUser } from './github-user'

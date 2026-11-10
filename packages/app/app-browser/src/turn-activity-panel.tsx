@@ -42,11 +42,13 @@ export type ResolveActivitySummarizer = (toolId: string) => ActivitySummarizer |
 // Mirrors @tinytinkerer/ui ThinkingDots without taking a UI-package dependency
 // here (app-browser stays free of the UI lib, like the local ToggleRow). The
 // `thinking-dot` animation class is provided globally by the host app CSS.
-const ThinkingDots = () => (
+// Shared with turn-chrome.tsx, which only colours the dots differently — one
+// copy instead of two keeps the chat route chunk inside its budget.
+export const ThinkingDots = ({ tone = 'bg-[var(--muted)]' }: { tone?: string }) => (
   <span aria-label="Thinking" className="inline-flex items-end gap-0.5 pb-0.5">
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
+    {[0, 1, 2].map((dot) => (
+      <span key={dot} className={`thinking-dot h-1.5 w-1.5 rounded-full ${tone}`} />
+    ))}
   </span>
 )
 

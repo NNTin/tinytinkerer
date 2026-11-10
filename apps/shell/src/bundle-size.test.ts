@@ -274,6 +274,15 @@ describe('shell bundle regression guard', () => {
     // Net 59.915 -> **59.777 kB**: the change pays for itself and returns ~140
     // bytes. Ceiling deliberately left at 60 so the headroom stays available
     // rather than needing a raise back through review.
+    //
+    // NOT raised for issue #510 T5 (2026-11-10): the sign-in gate in `ChatApp`
+    // (an `authMode: 'oauth'` app shows a call to action instead of the chat
+    // body while signed out). The panel itself is lazy and the host callback
+    // helper lives outside this chunk; the gate still cost ~430 bytes and first
+    // measured 60.29 kB (develop: 59.856). Paid for with duplication again: one
+    // shared `ThinkingDots` (turn-chrome had a copy of turn-activity-panel's),
+    // one slot-toggle class literal (tool-tree + context-inspector), and one
+    // sign-in-unavailable notice (both surfaces). Net 59.856 -> **59.820 kB**.
     const chunk = chunks.find((entry) => entry.fileName.includes('chat-surface'))
     expect(chunk, 'No chat route chunk found in build output').toBeDefined()
     expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(60)

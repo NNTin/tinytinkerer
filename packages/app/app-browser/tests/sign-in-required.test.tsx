@@ -108,29 +108,30 @@ describe.each(['floating', 'sidebar'] as const)('ChatApp (%s) in an oauth app', 
     renderChat(makeApp('oauth'), mode)
     await settle()
 
-    expect(screen.getByRole('region', { name: 'Sign in required' })).toBeVisible()
+    // The panel is lazy-loaded (kept out of the chat route chunk).
+    expect(await screen.findByRole('region', { name: 'Sign in required' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).toBeVisible()
     expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument()
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('starts the app’s sign-in from the call to action', () => {
+  it('starts the app’s sign-in from the call to action', async () => {
     const signIn = vi.fn<AppSignIn>(() => true)
     renderChat(makeApp('oauth', signIn), mode)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in with GitHub' }))
 
     expect(signIn).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('says so when sign-in cannot start', () => {
+  it('says so when sign-in cannot start', async () => {
     renderChat(
       makeApp('oauth', () => false),
       mode
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in with GitHub' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Sign-in is unavailable in this deployment.'
@@ -140,6 +141,7 @@ describe.each(['floating', 'sidebar'] as const)('ChatApp (%s) in an oauth app', 
   it('shows the composer once signed in', async () => {
     const app = makeApp('oauth')
     renderChat(app, mode)
+    await screen.findByRole('region', { name: 'Sign in required' })
 
     act(() => app.stores.auth.setState({ token: 'gho_token' }))
 
@@ -148,9 +150,12 @@ describe.each(['floating', 'sidebar'] as const)('ChatApp (%s) in an oauth app', 
   })
 })
 
-describe('ChatApp in a hybrid app', () => {
+// 'hybrid' is every product surface; 'host-token' is the documentation
+// assistant and live labs (apps/docs), which answer anonymously on the shared
+// key until the product hands them a token. Neither may show the CTA.
+describe.each(['hybrid', 'host-token'] as const)('ChatApp in a %s app', (authMode) => {
   it('keeps the anonymous composer while signed out', async () => {
-    renderChat(makeApp('hybrid'), 'floating')
+    renderChat(makeApp(authMode), 'floating')
 
     expect(await screen.findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Sign in required' })).not.toBeInTheDocument()

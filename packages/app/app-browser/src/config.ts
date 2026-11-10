@@ -135,11 +135,14 @@ export const resolveBrowserShellBootstrapConfig = (
   // on whichever surface owns that path (the origin root is apps/host), and the
   // stored return URL (see startGitHubOAuth) sends the user back to the exact
   // surface they started from.
+  //
+  // Derived even without a client id: the edge requires the exchange to carry a
+  // redirect URI on the calling page's own origin (issue #510), and the callback
+  // page must still be able to complete an exchange it is handed (the e2e build
+  // carries no VITE_GITHUB_CLIENT_ID). `canStartGitHubOAuth` still gates on the
+  // client id, so no sign-in can START without one.
   const githubRedirectUri =
-    options.githubRedirectUri ??
-    (options.githubClientId
-      ? `${new URL(options.baseUrl, options.origin).href}#/auth/callback`
-      : undefined)
+    options.githubRedirectUri ?? `${new URL(options.baseUrl, options.origin).href}#/auth/callback`
 
   return {
     edgeBaseUrl: options.edgeBaseUrl ?? DEFAULT_CONFIG.edgeBaseUrl,

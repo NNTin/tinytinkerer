@@ -8,6 +8,7 @@ import { FaReceipt } from 'react-icons/fa6'
 import { useChatStore, useInspectorStore, useSettingsStore } from './app'
 import { useModels } from './models'
 import { usePluginModules } from './plugins/use-plugin-modules'
+import { SLOT_TOGGLE_CLASS } from './slot-toggle-class'
 
 // The panel (and the heavier CodeMirror JSON view it pulls in) is lazy-loaded so
 // it stays out of the eagerly-loaded chat route chunk and only loads when a
@@ -108,10 +109,7 @@ export const ContextInspectorSlot = ({
         aria-label="Open context inspector"
         title="Inspect the exact context sent to the model"
         onClick={() => setOpen(true)}
-        className={
-          className ??
-          'flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 transition-colors hover:border-stone-400 hover:bg-stone-50 hover:text-stone-800'
-        }
+        className={className ?? SLOT_TOGGLE_CLASS}
       >
         {icon}
       </button>

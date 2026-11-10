@@ -9,7 +9,7 @@ import { useAppSignIn } from '../hooks'
  * polling, the model catalogue, MCP discovery, the run itself), so leaving them
  * unmounted is what guarantees a signed-out reader sends the edge nothing.
  */
-export const SignInRequiredPanel = (): ReactNode => {
+const SignInRequiredPanel = (): ReactNode => {
   const { canSignIn, signIn } = useAppSignIn()
   const [unavailable, setUnavailable] = useState(false)
 
@@ -42,3 +42,6 @@ export const SignInRequiredPanel = (): ReactNode => {
     </section>
   )
 }
+
+// Default export: the panel is only ever reached through `lazy()` (chat-app.tsx).
+export default SignInRequiredPanel

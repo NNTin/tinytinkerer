@@ -2,18 +2,7 @@ import type { Turn } from '@tinytinkerer/app-core'
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AssistantContent } from './assistant-content'
 import { toolResultsFromActivity } from './assistant-content-policy'
-import { toolLabel } from './turn-activity-panel'
-
-// Local thinking-dots so app-browser stays free of the @tinytinkerer/ui
-// dependency (mirrors the copy already in turn-activity-panel). The
-// `thinking-dot` animation class is provided globally by the host app CSS.
-const ThinkingDots = () => (
-  <span aria-label="Thinking" className="inline-flex items-end gap-0.5 pb-0.5">
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-current opacity-60" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-current opacity-60" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-current opacity-60" />
-  </span>
-)
+import { ThinkingDots, toolLabel } from './turn-activity-panel'
 
 const CopyIcon = () => (
   <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
@@ -249,7 +238,7 @@ export const TurnChrome = memo(function TurnChrome({
           className="mb-1.5 flex items-center gap-2 text-[11px] text-[var(--muted)]"
         >
           <span className="truncate">{status}</span>
-          <ThinkingDots />
+          <ThinkingDots tone="bg-current opacity-60" />
         </p>
       ) : null}
 
@@ -282,7 +271,7 @@ export const TurnChrome = memo(function TurnChrome({
       ) : (
         // Live turn with no content yet: the status line above already conveys
         // progress; when it is suppressed, fall back to bare dots.
-        ((!status ? <ThinkingDots /> : null) as ReactNode)
+        ((!status ? <ThinkingDots tone="bg-current opacity-60" /> : null) as ReactNode)
       )}
     </div>
   )

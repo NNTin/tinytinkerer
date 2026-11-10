@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { lazy, Suspense, useState, type ReactNode } from 'react'
 import {
   createChatPresentationStore,
   setChatPresentationMinimized,
@@ -13,12 +13,32 @@ import { useHumanPromptSurface } from '../human-prompt-presentation'
 import { DockedChatSurface } from './docked-chat-surface'
 import { FloatingChatSurface, type ChatLoadingComponent } from './floating-chat-surface'
 import { FloatingLayout } from './floating-layout'
-import { SignInRequiredPanel } from './sign-in-required-panel'
 import { SidebarLayout } from './sidebar-layout'
 import type { DockedSizeVariant } from './docked-chat-surface'
 import type { SnapEdge } from './layout-geometry'
 
 export type { ChatMode }
+
+// Lazy: only an app that requires sign-in ever renders it, so it stays out of
+// the shells' chat route chunk (apps/shell/src/bundle-size.test.ts).
+const SignInRequiredPanel = lazy(() => import('./sign-in-required-panel'))
+
+/**
+ * An app that requires sign-in (`authMode: 'oauth'`) renders a call to action
+ * INSTEAD of the chat body while signed out: the body is what talks to the edge,
+ * so leaving it unmounted is what sends the edge nothing (issue #510).
+ */
+const SignInGate = ({ children }: { children: ReactNode }): ReactNode => {
+  const { shell } = useBrowserApp()
+  const signedIn = useAuthStore((state) => state.token !== null)
+  return isSignInRequired(shell) && !signedIn ? (
+    <Suspense fallback={null}>
+      <SignInRequiredPanel />
+    </Suspense>
+  ) : (
+    children
+  )
+}
 
 type ChatAppBaseProps = {
   // Whether the dock/undock toggle is offered (default true). Set false to pin the
@@ -129,12 +149,6 @@ const ChatAppLayout = ({
   const { pending: pendingPrompt, presentation: promptPresentation } = useHumanPromptSurface()
   const composerPromptWaiting = pendingPrompt !== undefined && promptPresentation === 'composer'
 
-  // An app that requires sign-in (`authMode: 'oauth'`) renders a call to action
-  // instead of the chat body while signed out, so nothing reaches the edge.
-  const signInRequired = isSignInRequired(useBrowserApp().shell)
-  const signedIn = useAuthStore((state) => state.token !== null)
-  const showSignIn = signInRequired && !signedIn
-
   const morphTo = (mode: ChatMode, edge?: SnapEdge): void => {
     onPresentationChange(
       setChatPresentationMode(
@@ -159,9 +173,7 @@ const ChatAppLayout = ({
         fill={fill}
         {...(morphable ? { onUndock: () => morphTo('floating') } : {})}
       >
-        {showSignIn ? (
-          <SignInRequiredPanel />
-        ) : (
+        <SignInGate>
           <DockedChatSurface
             LoadingComponent={LoadingComponent}
             sizeVariant={sizeVariant}
@@ -171,7 +183,7 @@ const ChatAppLayout = ({
             {...(starterPrompts !== undefined ? { starterPrompts } : {})}
             {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
           />
-        )}
+        </SignInGate>
       </SidebarLayout>
     )
   }
@@ -199,9 +211,7 @@ const ChatAppLayout = ({
           }
         : {})}
     >
-      {showSignIn ? (
-        <SignInRequiredPanel />
-      ) : (
+      <SignInGate>
         <FloatingChatSurface
           LoadingComponent={LoadingComponent}
           framed={framed}
@@ -209,7 +219,7 @@ const ChatAppLayout = ({
           {...(starterPrompts !== undefined ? { starterPrompts } : {})}
           {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
         />
-      )}
+      </SignInGate>
     </FloatingLayout>
   )
 }
