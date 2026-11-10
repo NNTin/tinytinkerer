@@ -358,18 +358,25 @@ Tool results pass through the edge unmodified. KiPrint's `export_project`, for e
 Whether that URL is clickable in an answer depends on the app's `appAssistantPolicy`:
 
 - **No policy, or a policy without a link rule:** every `http(s)` link the model writes renders as a link. The markdown parser only strips non-web schemes such as `javascript:`. KiPrint's download URLs work as they are.
-- **A policy that demotes links it cannot verify** (as the documentation assistant does in `prepareRenderedContent` and `finalizeAnswer`): authorize the host's URLs from the turn's results. Each `AppToolResultRecord` from a host server carries `source: { kind: 'mcp', groupId: '<server id>' }`, and its `output.text` is the server's text exactly as returned. A link is genuine if it appears verbatim in such a result and is on the server's host:
+- **A policy that demotes links it cannot verify** (as the documentation assistant does in `prepareRenderedContent` and `finalizeAnswer`): authorize the host's URLs from the turn's results. Each `AppToolResultRecord` from a host server carries `source: { kind: 'mcp', groupId: '<server id>' }`, and its `output` is the edge's response: the server's `text` exactly as returned, and `isError`. A link is genuine if it appears verbatim in such a result, that result is not a tool error (`isError: true`), and the link is on the server's host:
 
 ```ts
 import type { AppToolResultRecord } from '@nntin/tinytinkerer-embed'
 
 const KIPRINT_HOST = 'kiprint.nntin.xyz'
 
-// The KiPrint URLs this turn's successful results actually returned.
+// The KiPrint URLs this turn's results actually returned, tool errors excluded.
 const kiprintLinks = (results: readonly AppToolResultRecord[]): Set<string> =>
   new Set(
     results
-      .filter((result) => result.source?.kind === 'mcp' && result.source.groupId === 'kiprint')
+      // A tool error (`isError: true`) still arrives as a completed result, and its
+      // text can echo a model-chosen input, so it must never authorize a link.
+      .filter(
+        (result) =>
+          result.source?.kind === 'mcp' &&
+          result.source.groupId === 'kiprint' &&
+          (result.output as { isError?: unknown }).isError !== true
+      )
       .flatMap((result) => {
         const text = (result.output as { text?: unknown }).text
         return typeof text === 'string' ? (text.match(/https:\/\/[^\s"'<>)]+/g) ?? []) : []
@@ -379,6 +386,8 @@ const kiprintLinks = (results: readonly AppToolResultRecord[]): Set<string> =>
 ```
 
 Keep a link when its `url` is in this set, and demote it otherwise. Check against the results, not against the host alone: an answer could otherwise carry a fabricated KiPrint path.
+
+The `isError` check is required, and only the filter provides it. The runtime passes the policy every call that did not throw. Transport failures and edge rejections never reach it. But a tool failure the MCP server reports itself arrives as a `200` with `isError: true`, and does reach the policy. Its text can echo a model- or injection-chosen input, such as `invalid project https://kiprint.nntin.xyz/downloads/<forged>`.
 
 ---
 
