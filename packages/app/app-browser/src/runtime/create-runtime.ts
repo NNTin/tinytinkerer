@@ -98,6 +98,10 @@ export const createRuntime = (options: {
   // server's discovery can never be read for a host server, or the reverse.
   hostMcpServers?: McpServerConfig[]
   hostMcpDiscovery?: Record<string, McpDiscoveryResult>
+  // A one-line system note naming the app's `required` host servers that are
+  // down (issue #518, F5), appended at every reasoning boundary so the model
+  // knows those tools are missing. Omitted when every required server is up.
+  hostMcpNote?: string
   pluginActivation?: PluginActivationState
   // Per-tool denylist for an enabled plugin (issue #400). Filtered at
   // registration time in `collectContributions` below, so a disabled tool never
@@ -502,6 +506,7 @@ export const createRuntime = (options: {
   const appPolicy = options.appAssistantPolicy
   const policyInstructions = appPolicy?.instructions
   const policyFinalizeAnswer = appPolicy?.finalizeAnswer
+  const hostMcpNote = options.hostMcpNote
 
   return createChatRuntime({
     ...(policyFinalizeAnswer
@@ -548,10 +553,12 @@ export const createRuntime = (options: {
       activePluginModules.some((mod) => mod.manifest.inspectorDescriptor)
         ? { onForwardRequest: captureForwardedRequest }
         : {}),
-      ...(policyInstructions
+      ...(policyInstructions || hostMcpNote
         ? {
             appInstructions: (boundary) =>
-              policyInstructions({ boundary, toolIds: registeredAppToolIds })
+              [policyInstructions?.({ boundary, toolIds: registeredAppToolIds }), hostMcpNote]
+                .filter((part) => part && part.trim().length > 0)
+                .join('\n\n') || undefined
           }
         : {})
     }),

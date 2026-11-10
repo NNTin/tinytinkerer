@@ -14,7 +14,7 @@ import {
 import { MarkdownDocument } from './markdown-document'
 import { usePreSendDisclosureStore } from './pre-send-disclosure'
 import { useSettingsSurfaceController } from './surfaces'
-import { useHostMcp } from './app'
+import { retryHostMcpDiscovery, useHostMcp, useOptionalBrowserApp } from './app'
 import type { HostMcpServer } from './stores/host-mcp-store'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 import { useDialogFocus, useDialogEscape } from './use-dialog-focus'
@@ -374,14 +374,19 @@ const mcpSyncBadge = (
 // A server the app provides (issue #510, T2): shown so the user knows where its
 // tools come from, but with nothing to toggle, edit or remove. It is part of the
 // app, not of the user's settings, and its token lives on the edge.
+//
+// A failed discovery gets a Retry (issue #518, F5): discovery otherwise reruns
+// only on a token change, so a server that came back up needed a reload.
 const HostMcpServerCard = ({
   server,
   discovery,
-  isSyncing
+  isSyncing,
+  onRetry
 }: {
   server: HostMcpServer
   discovery: McpDiscoveryEntry | undefined
   isSyncing: boolean
+  onRetry: () => void
 }) => {
   const { syncBadge, badgeClass } = mcpSyncBadge(isSyncing, discovery, 'Sign in to load its tools')
   return (
@@ -389,10 +394,24 @@ const HostMcpServerCard = ({
       className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 text-sm"
       data-testid="host-mcp-server"
     >
-      <p className="truncate font-medium text-[var(--text-strong)]">{server.name}</p>
-      <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{server.url}</p>
-      <p className={`mt-0.5 text-xs ${badgeClass}`}>{syncBadge}</p>
-      <p className="mt-0.5 text-xs text-[var(--muted)]">Provided by this app</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-[var(--text-strong)]">{server.name}</p>
+          <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{server.url}</p>
+          <p className={`mt-0.5 text-xs ${badgeClass}`}>{syncBadge}</p>
+          <p className="mt-0.5 text-xs text-[var(--muted)]">Provided by this app</p>
+        </div>
+        {discovery?.error && !isSyncing ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            aria-label={`Retry ${server.name}`}
+            className="shrink-0 rounded px-2 py-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]"
+          >
+            Retry
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -536,6 +555,7 @@ export const McpServerList = () => {
   const hostServers = useHostMcp((state) => state.servers)
   const hostDiscovery = useHostMcp((state) => state.discovery)
   const hostSyncing = useHostMcp((state) => state.syncing)
+  const app = useOptionalBrowserApp()
 
   const [addForm, setAddForm] = useState<McpServerFormState | null>(null)
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set())
@@ -573,6 +593,10 @@ export const McpServerList = () => {
           server={server}
           discovery={hostDiscovery[server.id]}
           isSyncing={hostSyncing.includes(server.id)}
+          onRetry={() => {
+            // Host servers come from an app, so `app` is always set here.
+            if (app) void retryHostMcpDiscovery(app)
+          }}
         />
       ))}
       {mcpServers.length === 0 ? (

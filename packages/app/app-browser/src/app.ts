@@ -170,7 +170,8 @@ export type BrowserApp = {
     /**
      * This app's host-provided MCP servers and their discovery results (issue
      * #510, T2), or `undefined` for an app that provides none. In memory only:
-     * never written to the user's settings.
+     * never written to the user's settings. Read it with `useHostMcp`, and
+     * re-run discovery with `retryHostMcpDiscovery` (issue #518, F5).
      */
     hostMcp?: HostMcpStore
   }
@@ -585,6 +586,19 @@ export const initializeBrowserApp = async (
   await reporterReady
 }
 
+/**
+ * Re-runs discovery of every host-provided MCP server with the current sign-in
+ * token (issue #518, F5). Discovery otherwise runs only at boot and when the
+ * token changes, so a server that comes back up after a failure needs this (or
+ * a reload) before its tools return. Settings' Retry button calls it.
+ *
+ * Resolves once discovery settles; it never rejects, because a failure is
+ * recorded as that server's `discovery[id].error`. A no-op for an app with no
+ * host-provided servers.
+ */
+export const retryHostMcpDiscovery = (app: BrowserApp): Promise<void> =>
+  app.stores.hostMcp?.getState().discover(app.stores.auth.getState().token) ?? Promise.resolve()
+
 export const AppBrowserProvider = ({
   app,
   children
@@ -599,8 +613,14 @@ export const useAuthStore = <T>(selector: (state: AuthState) => T): T =>
 export const useChatStore = <T>(selector: (state: ChatState) => T): T =>
   useStore(useBrowserApp().stores.chat, selector)
 
-// An app with no host-provided MCP servers — or a surface rendered outside any
-// app, as component tests do — reads an empty, never-changing store.
+/**
+ * Subscribes to the app's host-provided MCP servers (issue #518, F5): `servers`,
+ * `discovery` (per server id, with `error` set when its last sync failed) and
+ * `syncing`. Pair it with `hostMcpServerStatus` to render a host's own status.
+ *
+ * An app with no host-provided servers — or a surface rendered outside any
+ * app, as component tests do — reads an empty, never-changing store.
+ */
 export const useHostMcp = <T>(selector: (state: HostMcpState) => T): T =>
   useStore(useOptionalBrowserApp()?.stores.hostMcp ?? EMPTY_HOST_MCP_STORE, selector)
 

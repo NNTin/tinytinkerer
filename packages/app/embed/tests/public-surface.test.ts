@@ -49,10 +49,13 @@ describe('@nntin/tinytinkerer-embed public entry', () => {
       'createBrowserApp',
       'createStageTools',
       'genericToolTreeSummarizer',
+      'hostMcpServerStatus',
       'isGitHubOAuthCallback',
       'isSignInRequired',
       'loadPlugins',
       'resolveBrowserShellBootstrapConfig',
+      'retryHostMcpDiscovery',
+      'useHostMcp',
       'z'
     ])
   })
@@ -88,6 +91,9 @@ describe('@nntin/tinytinkerer-embed public entry', () => {
       'DocumentGlobalCapabilities',
       'GlobalHostCapabilities',
       'HostMcpServer',
+      'HostMcpServerStatus',
+      'HostMcpState',
+      'HostMcpStore',
       'PluginCatalogue',
       'PreSendDisclosure',
       'ShellThemeTokens',

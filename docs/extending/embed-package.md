@@ -86,6 +86,9 @@ that, such as finishing GitHub's sign-in redirect, imports `@nntin/tinytinkerer-
 | `genericToolTreeSummarizer`             | The fallback tool-picker mapper for an app with its own tools                                          |
 | `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES`  | The `documentGlobals` value for a page that owns everything                                            |
 | `NO_GLOBAL_HOST_CAPABILITIES`           | The `globalHosts` value for a shell that mounts no document-level dialogs                              |
+| `useHostMcp`                            | React hook over `app.stores.hostMcp`: your MCP servers and their discovery status                      |
+| `hostMcpServerStatus`                   | One host server's status: `syncing`, `signed-out`, `available` or `unavailable` (with its error)       |
+| `retryHostMcpDiscovery`                 | Re-runs discovery of your MCP servers with the current token                                           |
 
 Types: `AppTool`, `AppToolGroup`, `AppToolRunBindings`, `AppToolRunImplementation`, `Tool`,
 `ActivitySummarizer`, `ActivityStatus`, `ActivityView`, `ActivityViewSection`, `AppAssistantPolicy`,
@@ -93,7 +96,7 @@ Types: `AppTool`, `AppToolGroup`, `AppToolRunBindings`, `AppToolRunImplementatio
 `BrowserAuthMode`, `BrowserShell`, `BrowserShellBootstrapOptions`, `BrowserShellConfig`, `CataloguePluginName`,
 `ChatAppProps`, `ChatDockEdge`, `ChatLoadingComponent`, `ChatMode`, `ChatPresentation`,
 `ConversationResetBehavior`, `CreateStageToolsOptions`, `DocumentGlobalCapabilities`,
-`GlobalHostCapabilities`, `HostMcpServer`, `PluginCatalogue`, `PreSendDisclosure`, `ShellThemeTokens`,
+`GlobalHostCapabilities`, `HostMcpServer`, `HostMcpServerStatus`, `HostMcpState`, `HostMcpStore`, `PluginCatalogue`, `PreSendDisclosure`, `ShellThemeTokens`,
 `StageToolDefinition`, `StageToolRequestHandle`, `ToolTreeSummarizer`, `ToolTreeView`.
 
 Two subpath exports carry the stylesheets: `@nntin/tinytinkerer-embed/embed.css` and
@@ -129,19 +132,19 @@ telemetry. It is safe to import from your eager entry. It exports `GITHUB_OAUTH_
 `plugins` is the only required option. Every other option has a default that suits a page with
 one assistant on it.
 
-| Option               | Meaning                                                                                                                                                                                                                                                                                                                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `plugins`            | Required. A function returning this app's plugins, usually `() => loadPlugins([...names])`. There is no default: name the subset you offer. `() => Promise.resolve([])` offers none                                                                                                                                                                                                           |
-| `appToolGroup`       | Your own always-on tools, as one `AppToolGroup` (`{ id, label, tools }`). They are registered in the runtime and shown in the tool picker as one group. They run in the runtime's tool-calling loop, which means the model reads each result before it picks the next call                                                                                                                    |
-| `mcpServers`         | MCP servers the host provides, as `HostMcpServer[]` (`{ id, name, url }`, no token). They are discovered at boot and their tools register as `mcp:<id>:<tool>`. They are not stored in the user's settings and are read-only there. The edge injects each server's token, so the browser never holds it. See [MCP integration](../plugins-and-tools/mcp-integration.md#host-provided-servers) |
-| `appAssistantPolicy` | Your grounding and answer policy: instruction boundaries, and which links the transcript may render                                                                                                                                                                                                                                                                                           |
-| `starterPrompts`     | Suggestions shown on an empty conversation, before plugin or generic ones                                                                                                                                                                                                                                                                                                                     |
-| `documentGlobals`    | Which document-wide effects this app owns: `brandMetadata` (TinyTinkerer's favicon/manifest/theme-colour in `<head>`), `telemetry`, `contentRenderReporter`, `oauthCallbackWatchdog`. Omitted fields default to `true`. A host that owns its `<head>` and runs no TinyTinkerer telemetry sets the first two to `false`                                                                        |
-| `signIn`             | A host-provided sign-in action. Return `true` if the host started a sign-in. Omitted, the shell's own GitHub OAuth is the only route                                                                                                                                                                                                                                                          |
-| `toolTreeSummarizer` | The fallback tool-picker mapper. Pass `genericToolTreeSummarizer` with an `appToolGroup`, so the picker shows your tools even with the tool-tree plugin switched off                                                                                                                                                                                                                          |
-| `conversationReset`  | What the reset control does: `'clear-in-place'` (the default) or `'restart'`, which aborts the run and starts a fresh conversation                                                                                                                                                                                                                                                            |
-| `preSendDisclosure`  | A one-time notice that must be acknowledged before the first message is sent                                                                                                                                                                                                                                                                                                                  |
-| `humanInput`         | Whether this app can ask its user a question in the middle of a run (default `true`). Set it to `false` if none of your tools or plugins asks, and the prompt renderer is never loaded                                                                                                                                                                                                        |
+| Option               | Meaning                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plugins`            | Required. A function returning this app's plugins, usually `() => loadPlugins([...names])`. There is no default: name the subset you offer. `() => Promise.resolve([])` offers none                                                                                                                                                                                                                      |
+| `appToolGroup`       | Your own always-on tools, as one `AppToolGroup` (`{ id, label, tools }`). They are registered in the runtime and shown in the tool picker as one group. They run in the runtime's tool-calling loop, which means the model reads each result before it picks the next call                                                                                                                               |
+| `mcpServers`         | MCP servers the host provides, as `HostMcpServer[]` (`{ id, name, url, required? }`, no token). They are discovered at boot and their tools register as `mcp:<id>:<tool>`. They are not stored in the user's settings and are read-only there. The edge injects each server's token, so the browser never holds it. See [MCP integration](../plugins-and-tools/mcp-integration.md#host-provided-servers) |
+| `appAssistantPolicy` | Your grounding and answer policy: instruction boundaries, and which links the transcript may render                                                                                                                                                                                                                                                                                                      |
+| `starterPrompts`     | Suggestions shown on an empty conversation, before plugin or generic ones                                                                                                                                                                                                                                                                                                                                |
+| `documentGlobals`    | Which document-wide effects this app owns: `brandMetadata` (TinyTinkerer's favicon/manifest/theme-colour in `<head>`), `telemetry`, `contentRenderReporter`, `oauthCallbackWatchdog`. Omitted fields default to `true`. A host that owns its `<head>` and runs no TinyTinkerer telemetry sets the first two to `false`                                                                                   |
+| `signIn`             | A host-provided sign-in action. Return `true` if the host started a sign-in. Omitted, the shell's own GitHub OAuth is the only route                                                                                                                                                                                                                                                                     |
+| `toolTreeSummarizer` | The fallback tool-picker mapper. Pass `genericToolTreeSummarizer` with an `appToolGroup`, so the picker shows your tools even with the tool-tree plugin switched off                                                                                                                                                                                                                                     |
+| `conversationReset`  | What the reset control does: `'clear-in-place'` (the default) or `'restart'`, which aborts the run and starts a fresh conversation                                                                                                                                                                                                                                                                       |
+| `preSendDisclosure`  | A one-time notice that must be acknowledged before the first message is sent                                                                                                                                                                                                                                                                                                                             |
+| `humanInput`         | Whether this app can ask its user a question in the middle of a run (default `true`). Set it to `false` if none of your tools or plugins asks, and the prompt renderer is never loaded                                                                                                                                                                                                                   |
 
 ### Tools
 
@@ -190,6 +193,72 @@ const app = createBrowserApp(config, { plugins, mcpServers })
   never written to the user's settings. Settings lists them above the user's own servers, marked
   "Provided by this app", with their sync status and nothing to toggle, edit or remove. Users can
   still add their own servers beside them.
+
+#### When a server is down
+
+A failed discovery is recorded, not thrown. The server contributes no tools until it is discovered
+again, and the user sees it in two places:
+
+- **Settings → Tools.** The card shows the error and a **Retry** button.
+- **The tool picker.** It lists your servers under "Provided by this app", read-only. A failed one
+  reads "Unavailable: <error>" and has its own **Retry**.
+
+Discovery otherwise reruns only when the token changes. So call `retryHostMcpDiscovery(app)` when
+you know the server is back, for example from your own status banner. It resolves when discovery
+settles and never rejects. For an app with no `mcpServers` it does nothing.
+
+Mark a server the app depends on as `required: true`:
+
+```ts
+const mcpServers: HostMcpServer[] = [
+  { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.nntin.xyz/mcp', required: true }
+]
+```
+
+While a required server's tools are missing, every turn's system prompt ends with one line:
+"Note: KiPrint is unavailable right now, so its tools are missing from this turn…". The tools
+count as missing when discovery failed, is still running, or the user is signed out. The note tells
+the model to say the server is unavailable rather than claim it used a tool. The note goes after
+your `appAssistantPolicy` instructions at all three boundaries (planning, decision, synthesis). It
+leaves out the discovery error, because that text comes from a remote server. Without `required`, a
+down server shows only in the UI.
+
+#### Rendering your own status
+
+`app.stores.hostMcp` is a Zustand store, or `undefined` when you pass no `mcpServers`. Its state
+is a `HostMcpState`:
+
+| Field             | Meaning                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `servers`         | The `HostMcpServer[]` you passed                                                                                               |
+| `discovery`       | The last discovery result per server id: `{ serverId, serverName, tools, syncedAt, error? }`. `error` is set when it failed    |
+| `syncing`         | The ids of servers whose discovery is in flight                                                                                |
+| `discover(token)` | Rediscovers every server with `token`. Without a token it sends nothing and clears `discovery`. Prefer `retryHostMcpDiscovery` |
+
+Inside `BrowserAppShell`, read it with `useHostMcp(selector)`. Outside React, use
+`app.stores.hostMcp.subscribe`. `hostMcpServerStatus(state, id)` turns the state into one
+server's status:
+
+```tsx
+import { hostMcpServerStatus, retryHostMcpDiscovery, useHostMcp } from '@nntin/tinytinkerer-embed'
+import type { BrowserApp } from '@nntin/tinytinkerer-embed'
+
+const KiPrintBanner = ({ app }: { app: BrowserApp }) => {
+  const discovery = useHostMcp((state) => state.discovery)
+  const syncing = useHostMcp((state) => state.syncing)
+  const status = hostMcpServerStatus({ discovery, syncing }, 'kiprint')
+  if (status.state !== 'unavailable') return null
+  return (
+    <p role="status">
+      KiPrint is unavailable ({status.error}).{' '}
+      <button onClick={() => void retryHostMcpDiscovery(app)}>Retry</button>
+    </p>
+  )
+}
+```
+
+Select store fields, as above, and call `hostMcpServerStatus` outside the selector. It returns a
+new object on every call, so used as the selector it would re-render without end.
 
 #### Links your MCP server returns
 

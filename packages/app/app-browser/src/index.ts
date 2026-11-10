@@ -22,9 +22,11 @@ export {
   AppBrowserProvider,
   createBrowserApp,
   initializeBrowserApp,
+  retryHostMcpDiscovery,
   useAuthStore,
   useBrowserApp,
   useChatStore,
+  useHostMcp,
   useOptionalBrowserApp,
   useSettingsStore,
   useStatusStore
@@ -44,7 +46,13 @@ export type {
   AppInstructionBoundary,
   AppToolResultRecord
 } from './app-assistant-policy'
-export type { HostMcpServer } from './stores/host-mcp-store'
+export { hostMcpServerStatus } from './stores/host-mcp-store'
+export type {
+  HostMcpServer,
+  HostMcpServerStatus,
+  HostMcpState,
+  HostMcpStore
+} from './stores/host-mcp-store'
 export type { AssistantContentProps } from './assistant-content'
 export { assistantContentPlugins } from './assistant-content'
 export {

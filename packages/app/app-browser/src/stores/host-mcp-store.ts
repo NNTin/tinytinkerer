@@ -15,6 +15,14 @@ export type HostMcpServer = {
   id: string
   name: string
   url: string
+  /**
+   * The app depends on this server (issue #518, F5). While its tools are
+   * missing — discovery failed, is still running, or the user is signed out —
+   * every turn's system prompt carries a one-line note saying the server is
+   * unavailable, so the model tells the user instead of claiming to use a tool
+   * it does not have. Omitted, a down server only shows in the UI.
+   */
+  required?: boolean
 }
 
 /**
@@ -39,6 +47,49 @@ export type HostMcpState = {
 }
 
 export type HostMcpStore = StoreApi<HostMcpState>
+
+/**
+ * Where one host server stands, for a host that renders its own status
+ * (issue #518, F5). `unavailable` means its last discovery failed; `error` is
+ * the reason. `signed-out` means discovery was never attempted, because the
+ * edge's MCP routes need a signed-in caller.
+ */
+export type HostMcpServerStatus =
+  | { state: 'syncing' }
+  | { state: 'signed-out' }
+  | { state: 'available'; toolCount: number }
+  | { state: 'unavailable'; error: string }
+
+export const hostMcpServerStatus = (
+  state: Pick<HostMcpState, 'discovery' | 'syncing'>,
+  serverId: string
+): HostMcpServerStatus => {
+  if (state.syncing.includes(serverId)) return { state: 'syncing' }
+  const discovery = state.discovery[serverId]
+  if (!discovery) return { state: 'signed-out' }
+  if (discovery.error) return { state: 'unavailable', error: discovery.error }
+  return { state: 'available', toolCount: discovery.tools.length }
+}
+
+/**
+ * The one-line system note for `required` servers whose tools are missing from
+ * this turn, or `undefined` when there are none. The discovery error is left
+ * out on purpose: it is text from a remote server, and the model needs only to
+ * know the tools are gone.
+ */
+export const hostMcpUnavailableNote = (
+  state: Pick<HostMcpState, 'servers' | 'discovery'>
+): string | undefined => {
+  const missing = state.servers.filter((server) => {
+    if (!server.required) return false
+    const discovery = state.discovery[server.id]
+    return !discovery || Boolean(discovery.error)
+  })
+  if (missing.length === 0) return undefined
+  const names = missing.map((server) => server.name).join(', ')
+  const verb = missing.length === 1 ? 'is' : 'are'
+  return `Note: ${names} ${verb} unavailable right now, so ${missing.length === 1 ? 'its' : 'their'} tools are missing from this turn. If the user asks for something that needs ${missing.length === 1 ? 'it' : 'them'}, say it is unavailable; never claim to have used those tools.`
+}
 
 /** Stands in for an app that provides no servers, so a hook can always subscribe. */
 export const EMPTY_HOST_MCP_STORE: HostMcpStore = createStore<HostMcpState>(() => ({
