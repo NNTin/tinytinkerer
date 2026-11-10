@@ -9,6 +9,7 @@ import type { AppAssistantPolicy } from '../app-assistant-policy'
 import type { BrowserShell } from '../shell'
 import type { AuthStore } from '../stores/auth-store'
 import type { SettingsStore } from '../stores/settings-store'
+import { hostMcpServerConfig, type HostMcpStore } from '../stores/host-mcp-store'
 import { createPluginRuntime, createRuntime } from './create-runtime'
 import type { ForwardedRequestSink } from './edge-fetch'
 
@@ -31,6 +32,9 @@ export const createBrowserRuntimeFactory = (options: {
   // The host app's per-turn step bound (issue #510, T4). Forwarded verbatim to
   // createRuntime; omitted keeps agent-core's default.
   maxIterations?: number
+  // The host app's provided MCP servers (issue #510, T2). Read at each run, so a
+  // discovery that finished after boot is picked up by the next send.
+  hostMcp?: HostMcpStore
   // The host app's human-in-the-loop queue (issue #489): `request` from the
   // app's own prompt store, which createRuntime tags with the run's
   // conversation id and wires into the PluginHost. Omitted leaves the runtime
@@ -45,6 +49,7 @@ export const createBrowserRuntimeFactory = (options: {
     // which threads it into the human-prompt bridge and the inspector capture sink.
     create: (context) => {
       const settings = options.settingsStore.getState()
+      const host = options.hostMcp?.getState()
       return createRuntime({
         baseUrl: options.shell.config.edgeBaseUrl,
         getToken: () => options.authStore.getState().token,
@@ -53,6 +58,13 @@ export const createBrowserRuntimeFactory = (options: {
         agentType: settings.agentType,
         mcpServers: settings.mcpServers,
         mcpDiscovery: settings.mcpDiscovery,
+        // The app's own servers. They carry no bearer token; the edge injects it.
+        ...(host
+          ? {
+              hostMcpServers: host.servers.map(hostMcpServerConfig),
+              hostMcpDiscovery: host.discovery
+            }
+          : {}),
         pluginActivation: settings.pluginActivation,
         pluginDisabledTools: settings.pluginDisabledTools,
         appToolDisablement: settings.appToolDisablement,

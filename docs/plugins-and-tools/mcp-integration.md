@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # MCP Integration
 
-TinyTinkerer supports per-user [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) servers. Users add remote MCP servers in Settings, the frontend discovers their tools, and those tools become available to the assistant during chat.
+TinyTinkerer supports [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) servers. Users add remote MCP servers in Settings, the frontend discovers their tools, and those tools become available to the assistant during chat. An embedding app can also provide servers of its own to every user; see [Host-provided servers](#host-provided-servers).
 
 Only V1 scope is implemented: tool calling over Streamable HTTP. Resources, prompts, remote OAuth, SSE fallback, and stdio servers are out of scope.
 
@@ -198,7 +198,7 @@ type McpToolMeta = {
 
 ## Edge proxy
 
-Both MCP routes require the same `Authorization` header that `/api/search` and `/api/models/chat` require. They are stateless: each request opens a fresh MCP client connection and closes it in a `finally` block.
+Both MCP routes require the same `Authorization` header that `/api/search` and `/api/models/chat` require. They are stateless: each request opens a fresh Streamable HTTP transport and MCP client connection, and closes it in a `finally` block. A server must not rely on an `Mcp-Session-Id` surviving from one request to the next.
 
 ### URL validation
 
@@ -210,6 +210,11 @@ anything else     → rejected with HTTP 400
 ```
 
 Private IP ranges, `file://`, and non-HTTP schemes are all blocked.
+
+Two edge settings refine this:
+
+- `MCP_ALLOWED_HOSTS` (var), when set, replaces the private-address blocklist with a strict allowlist: only the listed hostnames pass.
+- `MCP_HOST_SERVERS` (var) lists the hostnames of [host-provided servers](#host-provided-servers). These are always reachable, even when `MCP_ALLOWED_HOSTS` is set. The scheme rules above still apply to them.
 
 ### Discover — `POST /api/mcp/discover`
 
@@ -304,6 +309,79 @@ MCP presentation is owned by `summarizeMcpActivity` (`packages/app/app-browser/s
 
 ---
 
+## Host-provided servers
+
+An app that embeds TinyTinkerer can provide MCP servers to every user. For example, CanFactory gives its assistant a KiPrint server. These servers:
+
+- need no Settings change;
+- cannot be edited or removed by the user;
+- never put a token in the browser.
+
+### In the app
+
+Pass the servers to `createBrowserApp`. There is no token field:
+
+```ts
+import { createBrowserApp } from '@tinytinkerer/app-browser'
+
+const app = createBrowserApp(config, {
+  plugins,
+  mcpServers: [{ id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.nntin.xyz/mcp' }]
+})
+```
+
+- **Ids:** an `id` must be unique and contain no `:`. `createBrowserApp` throws otherwise.
+- **Discovery:** `initializeBrowserApp` discovers each server at boot with the signed-in user's token. It discovers again whenever the token changes (sign-in, sign-out, account switch). While signed out it sends nothing, because the MCP routes need a signed-in caller.
+- **Registration:** discovered tools register like a user's, as `mcp:<id>:<toolName>`, and run in the same [tool-calling loop](#4--the-tool-calling-loop). Host servers are registered before the user's own, so on an id clash the app's server wins.
+- **Storage:** the servers and their discovery results live in memory (`app.stores.hostMcp`). They are never written to the user's preferences.
+- **Settings:** Settings lists host servers above the user's own, marked "Provided by this app", with their sync status and nothing to toggle, edit or remove.
+
+### On the edge
+
+The browser calls `/api/mcp/discover` and `/api/mcp/call` with the server's `url` and no `bearerToken`. The edge recognises the host by its hostname:
+
+| Setting                    | Effect                                                                                                                                                                |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MCP_HOST_SERVERS` (var)   | Comma-separated hostnames. Always reachable, even when `MCP_ALLOWED_HOSTS` is set. The only hosts eligible for token injection.                                       |
+| `MCP_HOST_TOKENS` (secret) | JSON object, hostname → bearer token, e.g. `{"kiprint.nntin.xyz":"<token>"}`. For a host server the edge drops any browser-supplied `bearerToken` and sends this one. |
+
+A hostname that appears in `MCP_HOST_TOKENS` but not in `MCP_HOST_SERVERS` never gets a token. A host server with no token entry is called without one.
+
+Users' own servers are unaffected. They follow `MCP_ALLOWED_HOSTS` (or the blocklist) and send their own `bearerToken`, exactly as before.
+
+The tinytinkerer deployments set `MCP_HOST_SERVERS=kiprint.nntin.xyz` on the production edge and `kiprint-preview.nntin.xyz` on the develop edge. See [Vercel deployment](../self-hosting/vercel-deployment.md#host-provided-mcp-servers) for setting the secret.
+
+### Results and links
+
+Tool results pass through the edge unmodified. KiPrint's `export_project`, for example, returns a signed, expiring `https://<kiprint-host>/downloads/<token>` URL. The browser fetches that URL directly from KiPrint, not through the edge.
+
+Whether that URL is clickable in an answer depends on the app's `appAssistantPolicy`:
+
+- **No policy, or a policy without a link rule:** every `http(s)` link the model writes renders as a link. The markdown parser only strips non-web schemes such as `javascript:`. KiPrint's download URLs work as they are.
+- **A policy that demotes links it cannot verify** (as the documentation assistant does in `prepareRenderedContent` and `finalizeAnswer`): authorize the host's URLs from the turn's results. Each `AppToolResultRecord` from a host server carries `source: { kind: 'mcp', groupId: '<server id>' }`, and its `output.text` is the server's text exactly as returned. A link is genuine if it appears verbatim in such a result and is on the server's host:
+
+```ts
+import type { AppToolResultRecord } from '@tinytinkerer/app-browser'
+
+const KIPRINT_HOST = 'kiprint.nntin.xyz'
+
+// The KiPrint URLs this turn's successful results actually returned.
+const kiprintLinks = (results: readonly AppToolResultRecord[]): Set<string> =>
+  new Set(
+    results
+      .filter((result) => result.source?.kind === 'mcp' && result.source.groupId === 'kiprint')
+      .flatMap((result) => {
+        const text = (result.output as { text?: unknown }).text
+        return typeof text === 'string' ? (text.match(/https:\/\/[^\s"'<>)]+/g) ?? []) : []
+      })
+      .filter((url) => new URL(url).hostname === KIPRINT_HOST)
+  )
+```
+
+Keep a link when its `url` is in this set, and demote it otherwise. Check against the results, not against the host alone: an answer could otherwise carry a fabricated KiPrint path.
+
+---
+
 ## Building a compatible MCP server
 
 Any server that implements the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports) is compatible. The edge uses the official `@modelcontextprotocol/sdk` `Client` + `StreamableHTTPClientTransport`.
@@ -314,7 +392,7 @@ Minimal requirements:
 - Respond to `tools/list` with a list of tool definitions including `name`, `description`, and `inputSchema`
 - Respond to `tools/call` with a `content` array of `{ type: "text", text: "..." }` items
 
-The server does not need to support resources, prompts, or sampling for V1 compatibility.
+The server does not need to support resources, prompts, or sampling for V1 compatibility. Because the proxy is stateless, the server must also work without an `Mcp-Session-Id` carried between requests.
 
 ---
 

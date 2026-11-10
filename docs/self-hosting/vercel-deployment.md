@@ -210,6 +210,7 @@ Production (top-level):
 - `workers_dev: false`
 - `ALLOWED_ORIGINS=http://localhost:3111,https://tiny.nntin.xyz,https://canfactory.nntin.xyz`
 - `REQUIRE_AUTH_ORIGINS=https://canfactory.nntin.xyz`
+- `MCP_HOST_SERVERS=kiprint.nntin.xyz`
 - `SENTRY_ENVIRONMENT=production`
 
 Develop (`env.develop`, worker name `tinytinkerer-edge-develop`):
@@ -220,6 +221,7 @@ Develop (`env.develop`, worker name `tinytinkerer-edge-develop`):
   the develop edge; `localhost:5173` is CanFactory's local dev server and is on
   the develop edge only)
 - `REQUIRE_AUTH_ORIGINS=https://canfactory-preview.nntin.xyz,http://localhost:5173`
+- `MCP_HOST_SERVERS=kiprint-preview.nntin.xyz`
 - `SENTRY_ENVIRONMENT=develop`
 
 #### Required sign-in per origin
@@ -300,7 +302,27 @@ Optional:
 
 ```bash
 TAVILY_API_KEY
+MCP_HOST_TOKENS
 ```
+
+#### Host-provided MCP servers
+
+An embedding app can give every user an MCP server of its own. For example, CanFactory provides KiPrint. The app lists the server in `createBrowserApp(config, { mcpServers })` (see [MCP Integration](../plugins-and-tools/mcp-integration.md#host-provided-servers)). The edge holds the server's token, so the browser never has to.
+
+Two settings control this:
+
+- `MCP_HOST_SERVERS` (var): comma-separated hostnames, matched case-insensitively. These hosts are always reachable, even when `MCP_ALLOWED_HOSTS` is set. They are also the only hosts the edge injects a token for.
+- `MCP_HOST_TOKENS` (secret): a JSON object mapping a hostname to its bearer token. For a host server, the edge drops any `bearerToken` the browser sends and uses this token instead.
+
+You can store one GitHub Actions secret, `MCP_HOST_TOKENS`, for both Workers. Each Worker only uses the entries for the hostnames in its own `MCP_HOST_SERVERS`:
+
+```json
+{ "kiprint.nntin.xyz": "<prod token>", "kiprint-preview.nntin.xyz": "<develop token>" }
+```
+
+Keep the JSON on one line: the workflow writes it into a dotenv secrets file. If the secret is not valid JSON, the edge logs that (without its contents) and injects no token. Calls to the host server then reach it unauthenticated and are rejected there.
+
+Users' own MCP servers are unaffected. They follow `MCP_ALLOWED_HOSTS` (or the private-address blocklist) and send their own tokens, exactly as before.
 
 These are not meant to be set manually in the Cloudflare dashboard for normal deployments. The GitHub Actions workflow uploads them during `wrangler deploy --secrets-file ...`.
 

@@ -93,6 +93,11 @@ export const createRuntime = (options: {
   maxIterations?: number
   mcpServers?: McpServerConfig[]
   mcpDiscovery?: Record<string, McpDiscoveryResult>
+  // Servers the host app provides to every user (issue #510, T2), with their
+  // own in-memory discovery. Kept apart from the user's servers so a user
+  // server's discovery can never be read for a host server, or the reverse.
+  hostMcpServers?: McpServerConfig[]
+  hostMcpDiscovery?: Record<string, McpDiscoveryResult>
   pluginActivation?: PluginActivationState
   // Per-tool denylist for an enabled plugin (issue #400). Filtered at
   // registration time in `collectContributions` below, so a disabled tool never
@@ -260,9 +265,20 @@ export const createRuntime = (options: {
     () => captureDomSnapshot
   )
 
-  for (const server of options.mcpServers ?? []) {
+  // Host servers first, so on an id clash the app's server wins: addTool keeps
+  // the first tool registered under an id.
+  const mcpSources = [
+    ...(options.hostMcpServers ?? []).map((server) => ({
+      server,
+      disc: options.hostMcpDiscovery?.[server.id]
+    })),
+    ...(options.mcpServers ?? []).map((server) => ({
+      server,
+      disc: options.mcpDiscovery?.[server.id]
+    }))
+  ]
+  for (const { server, disc } of mcpSources) {
     if (!server.enabled) continue
-    const disc = options.mcpDiscovery?.[server.id]
     if (!disc || disc.error) continue
     for (const toolMeta of disc.tools) {
       addToolWithDescriptor(

@@ -16,6 +16,7 @@ import type { PluginCatalogue } from '../app'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { InspectorStore } from './inspector-store'
+import type { HostMcpStore } from './host-mcp-store'
 import type { HumanPromptActions } from '../human-prompt-bridge'
 
 // Defined in app-core next to the pure state helpers that construct slices, so
@@ -134,6 +135,9 @@ export const createChatStore = (options: {
   // The host app's per-turn step bound (issue #510, T4). Forwarded to the
   // runtime factory; absent keeps agent-core's default.
   maxIterations?: number
+  // The host app's provided MCP servers (issue #510, T2). Forwarded to the
+  // runtime factory, which registers their discovered tools each run.
+  hostMcp?: HostMcpStore
   /**
    * This app's human-in-the-loop queue, as the two callbacks this store and the
    * runtime it builds actually need (issue #489).
@@ -244,6 +248,7 @@ export const createChatStore = (options: {
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
         ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
         ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
+        ...(options.hostMcp ? { hostMcp: options.hostMcp } : {}),
         // This app's prompt queue (issue #489). The factory tags each request
         // with the run's conversation id and hands the result to the PluginHost;
         // omitting it — which only a directly-constructed store does — leaves

@@ -83,6 +83,9 @@ vi.mock('../src/pre-send-disclosure.js', () => ({
 }))
 
 import { SettingsPanel } from '../src/browser-settings-modal.js'
+import { AppBrowserProvider, type BrowserApp } from '../src/app.js'
+import { createHostMcpStore } from '../src/stores/host-mcp-store.js'
+import type { BrowserShell } from '../src/shell.js'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -206,6 +209,68 @@ describe('SettingsPanel (B2)', () => {
     } finally {
       controller.mcpServers = []
     }
+  })
+
+  it('lists host-provided MCP servers read-only, above the user’s own (issue #510, T2)', () => {
+    controller.mcpServers = [
+      { id: 's1', name: 'docs-server', url: 'https://mcp.example.com/mcp', enabled: true }
+    ]
+    const hostMcp = createHostMcpStore({ config: { edgeBaseUrl: '' } } as BrowserShell, [
+      { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.test/mcp' }
+    ])
+    hostMcp.setState({
+      discovery: {
+        kiprint: {
+          serverId: 'kiprint',
+          serverName: 'KiPrint',
+          syncedAt: '2026-11-10T00:00:00.000Z',
+          tools: [
+            { toolName: 'create_project', description: '', inputSchema: {} },
+            { toolName: 'add_wires', description: '', inputSchema: {} }
+          ]
+        }
+      }
+    })
+    const app = { stores: { hostMcp } } as unknown as BrowserApp
+    try {
+      render(
+        <AppBrowserProvider app={app}>
+          <SettingsPanel open onOpenChange={vi.fn()} />
+        </AppBrowserProvider>
+      )
+      fireEvent.click(screen.getByRole('tab', { name: 'Tools' }))
+
+      const card = screen.getByTestId('host-mcp-server')
+      expect(card).toHaveTextContent('KiPrint')
+      expect(card).toHaveTextContent('https://kiprint.test/mcp')
+      expect(card).toHaveTextContent('2 tools')
+      expect(card).toHaveTextContent('Provided by this app')
+      // Nothing to toggle, edit or remove.
+      expect(within(card).queryByRole('checkbox')).toBeNull()
+      expect(within(card).queryByRole('button')).toBeNull()
+      // The user's own server keeps its full controls beside it.
+      expect(screen.getByRole('button', { name: 'Remove docs-server' })).toBeInTheDocument()
+      expect(
+        card.compareDocumentPosition(screen.getByText('docs-server')) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    } finally {
+      controller.mcpServers = []
+    }
+  })
+
+  it('tells a signed-out user why a host server has no tools yet', () => {
+    const hostMcp = createHostMcpStore({ config: { edgeBaseUrl: '' } } as BrowserShell, [
+      { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.test/mcp' }
+    ])
+    const app = { stores: { hostMcp } } as unknown as BrowserApp
+    render(
+      <AppBrowserProvider app={app}>
+        <SettingsPanel open onOpenChange={vi.fn()} />
+      </AppBrowserProvider>
+    )
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }))
+    expect(screen.getByTestId('host-mcp-server')).toHaveTextContent('Sign in to load its tools')
   })
 
   it('uses theme tokens (not hardcoded stone) for text on the panel surface', () => {
