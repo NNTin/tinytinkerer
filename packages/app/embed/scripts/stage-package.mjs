@@ -50,8 +50,16 @@ if (version) {
 }
 writeFileSync(join(outDir, 'package.json'), `${JSON.stringify(published, null, 2)}\n`)
 
+// The licence text is the REPOSITORY's, copied from the root at staging time
+// rather than kept as a build output. A build output it cannot be: turbo
+// caches `build` as `dist/**` only, so a cache hit restores dist/ and nothing
+// beside it — which is how a cached CI build once staged a package with no
+// LICENSE and failed. Staging owns it, so every path that stages (the
+// acceptance run, the release workflow) gets it from the one source.
+const repoLicense = resolve(packageDir, '../../../LICENSE')
 for (const entry of manifest.files) {
-  cpSync(join(packageDir, entry), join(outDir, entry), { recursive: true })
+  const source = entry === 'LICENSE' ? repoLicense : join(packageDir, entry)
+  cpSync(source, join(outDir, entry), { recursive: true })
 }
 
 console.log(`[embed] staged ${published.name}@${published.version} in ${outDir}`)

@@ -23,15 +23,7 @@
  *
  * Any specifier it cannot place fails the build rather than shipping a hole.
  */
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -319,9 +311,6 @@ writeFileSync(
   join(packageDir, 'dist/index.d.ts'),
   `export * from '${relativeSpecifier(join(packageDir, 'dist/index.d.ts'), entryOut)}'\n`
 )
-
-// The package is published under the repository's licence; ship the text.
-copyFileSync(join(repoRoot, 'LICENSE'), join(packageDir, 'LICENSE'))
 
 console.log(
   `[embed] wrote ${files.size} declaration files` +
