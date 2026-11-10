@@ -87,6 +87,10 @@ export const createRuntime = (options: {
   getModel: () => string | null | undefined
   getLiteLLMBaseUrl?: () => string | null | undefined
   agentType?: AgentType
+  // Per-turn step bound (issue #510, T4). Omitted keeps agent-core's
+  // DEFAULT_MAX_ITERATIONS. Applies to every registered tool alike — MCP, plugin
+  // and app tools all run in the same loop.
+  maxIterations?: number
   mcpServers?: McpServerConfig[]
   mcpDiscovery?: Record<string, McpDiscoveryResult>
   pluginActivation?: PluginActivationState
@@ -512,6 +516,7 @@ export const createRuntime = (options: {
         }
       : {}),
     ...(options.agentType ? { agentType: options.agentType } : {}),
+    ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
     provider: new LiteLLMProvider({
       baseUrl: options.baseUrl,
       getToken: options.getToken,

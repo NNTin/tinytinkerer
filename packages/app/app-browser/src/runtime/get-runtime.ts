@@ -28,6 +28,9 @@ export const createBrowserRuntimeFactory = (options: {
   // The host app's grounding/answer policy (issue #478). Forwarded verbatim to
   // createRuntime; omitted by every app that contributes none.
   appAssistantPolicy?: AppAssistantPolicy
+  // The host app's per-turn step bound (issue #510, T4). Forwarded verbatim to
+  // createRuntime; omitted keeps agent-core's default.
+  maxIterations?: number
   // The host app's human-in-the-loop queue (issue #489): `request` from the
   // app's own prompt store, which createRuntime tags with the run's
   // conversation id and wires into the PluginHost. Omitted leaves the runtime
@@ -59,6 +62,7 @@ export const createBrowserRuntimeFactory = (options: {
           : {}),
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
         ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
+        ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
         ...(options.requestHumanInput ? { requestHumanInput: options.requestHumanInput } : {}),
         ...(context?.conversationId ? { conversationId: context.conversationId } : {})
       })
