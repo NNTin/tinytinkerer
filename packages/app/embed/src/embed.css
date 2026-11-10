@@ -1,0 +1,8 @@
+/*
+ * The embed baseline (issue #480): app-browser's scoped preflight, launcher
+ * primitive, prose styles and token graph. Every rule is keyed on
+ * `:where(.tt-app-embed)`, so it changes nothing on the host page outside a
+ * TinyTinkerer surface. Re-published verbatim — see the source file for the
+ * scoping model.
+ */
+@import '@tinytinkerer/app-browser/embed.css';

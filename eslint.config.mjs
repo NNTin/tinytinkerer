@@ -5,7 +5,14 @@ import prettier from 'eslint-config-prettier'
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/.turbo/**']
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/.turbo/**',
+      // A standalone npm project that installs the PACKED embed package; it is
+      // type-checked by packages/app/embed/acceptance/run.mjs, not here.
+      'packages/app/embed/acceptance/host/**'
+    ]
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

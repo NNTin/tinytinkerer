@@ -1,0 +1,94 @@
+name: Publish embed package
+
+# Publishes @nntin/tinytinkerer-embed (packages/app/embed) to GitHub Packages on
+# every release (issue #510, T1). A release here is the develop → main merge
+# that release-pr.yml opens, so this runs on each push to `main`.
+#
+# Versioning: semver, and 0.x prereleases first. Each release publishes
+# `<package.json version>-next.<run number>` (e.g. 0.1.0-next.12) under the
+# `next` dist-tag. A maintainer promotes a stable version deliberately, by
+# running this workflow by hand with `channel: latest`, which publishes the
+# package.json version as-is. Breaking changes to createBrowserApp, ChatApp's
+# props, AppToolGroup or Tool bump the major (docs/extending/embed-package.md).
+#
+# Access: GitHub Packages requires a token even to READ a package. A consumer in
+# another repository (NNTin/CanFactory) reads it with its own GITHUB_TOKEN only
+# after the package's settings grant that repository Read access
+# (Package settings → Manage Actions access → Add repository → Read). That is a
+# one-time owner step per consuming repository; it is not something this
+# workflow can do.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/publish-embed.yml'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: '`next` publishes <version>-next.<run>; `latest` publishes the package.json version as a stable release.'
+        type: choice
+        options: [next, latest]
+        default: next
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-embed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
+        with:
+          install: full
+
+      - name: Build the package
+        run: |
+          pnpm generate:privacy-policy
+          pnpm exec turbo run build --filter=@nntin/tinytinkerer-embed
+
+      - name: Resolve version
+        id: version
+        env:
+          CHANNEL: ${{ inputs.channel || 'next' }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          base="$(node -p "require('./packages/app/embed/package.json').version")"
+          if [ "$CHANNEL" = "latest" ]; then
+            version="$base"
+          else
+            version="$base-next.$RUN_NUMBER"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "Publishing @nntin/tinytinkerer-embed@$version under dist-tag $CHANNEL"
+
+      - name: Stage the publishable package
+        run: node packages/app/embed/scripts/stage-package.mjs "$RUNNER_TEMP/embed" --version "${{ steps.version.outputs.version }}"
+
+      - name: Publish to GitHub Packages
+        working-directory: ${{ runner.temp }}/embed
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s\n' \
+            '@nntin:registry=https://npm.pkg.github.com' \
+            '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > .npmrc
+          npm publish --tag "${{ steps.version.outputs.tag }}"
+
+      # The acceptance install, against what was just published rather than a
+      # local tarball: a fresh npm project with only the consumer .npmrc
+      # installs it, typechecks and builds.
+      - name: Verify the published package installs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node packages/app/embed/acceptance/run.mjs --from-registry "${{ steps.version.outputs.version }}"

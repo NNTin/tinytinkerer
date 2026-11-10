@@ -322,7 +322,7 @@ An app that embeds TinyTinkerer can provide MCP servers to every user. For examp
 Pass the servers to `createBrowserApp`. There is no token field:
 
 ```ts
-import { createBrowserApp } from '@tinytinkerer/app-browser'
+import { createBrowserApp } from '@nntin/tinytinkerer-embed'
 
 const app = createBrowserApp(config, {
   plugins,
@@ -361,7 +361,7 @@ Whether that URL is clickable in an answer depends on the app's `appAssistantPol
 - **A policy that demotes links it cannot verify** (as the documentation assistant does in `prepareRenderedContent` and `finalizeAnswer`): authorize the host's URLs from the turn's results. Each `AppToolResultRecord` from a host server carries `source: { kind: 'mcp', groupId: '<server id>' }`, and its `output.text` is the server's text exactly as returned. A link is genuine if it appears verbatim in such a result and is on the server's host:
 
 ```ts
-import type { AppToolResultRecord } from '@tinytinkerer/app-browser'
+import type { AppToolResultRecord } from '@nntin/tinytinkerer-embed'
 
 const KIPRINT_HOST = 'kiprint.nntin.xyz'
 

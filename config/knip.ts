@@ -126,6 +126,14 @@ const config: KnipConfig = {
       // Declared for the plugin's schema work; no runtime import yet.
       ignoreDependencies: ['zod']
     },
+    // The published embed package (issue #510, T1). Its build/stage/check
+    // scripts and the acceptance runner are entries in their own right, and
+    // `acceptance/host/` is a standalone npm project (not a workspace) that
+    // installs the PACKED package, so it is not this workspace's source.
+    'packages/app/embed': {
+      entry: ['scripts/*.mjs', 'tests/**/*.test.ts'],
+      ignore: ['acceptance/host/**']
+    },
     'packages/app/canvas': {
       // Canvas has a React mount test in addition to its .ts domain tests. Keep the
       // package's complete Vitest suite explicit so Knip traces its test-only React

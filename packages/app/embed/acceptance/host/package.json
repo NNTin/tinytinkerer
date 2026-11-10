@@ -1,0 +1,23 @@
+{
+  "name": "tinytinkerer-embed-acceptance-host",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A fresh npm project that consumes @nntin/tinytinkerer-embed exactly as an embedding host would. See ../run.mjs.",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@nntin/tinytinkerer-embed": "0.1.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "typescript": "6.0.3",
+    "vite": "8.1.6"
+  }
+}

@@ -41,7 +41,7 @@ import {
   completeGitHubOAuth,
   createBrowserApp,
   GITHUB_OAUTH_CALLBACK_PATH
-} from '@tinytinkerer/app-browser'
+} from '@nntin/tinytinkerer-embed'
 
 const app = createBrowserApp(
   {
