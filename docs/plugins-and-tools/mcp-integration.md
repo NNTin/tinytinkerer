@@ -51,7 +51,7 @@ The loop repeats until the model stops calling tools or the turn reaches its **s
 
 #### Step bound
 
-`maxIterations` bounds the decisions in one turn. It defaults to **16** (`DEFAULT_MAX_ITERATIONS` in agent-core). Every decision counts, including the closing one with no tool call. So a default turn can make up to 15 tool calls. When the bound is reached, the runtime stops calling tools and answers from the results it has.
+`maxIterations` bounds the decisions in one turn. It defaults to **16** (`DEFAULT_MAX_ITERATIONS` in agent-core). Every decision counts, including the closing one with no tool call. So a default turn makes at most 16 tool calls, or 15 when the model ends the turn with its own closing decision. When the bound is reached, the runtime stops calling tools and answers from the results it has. A value below 1 is raised to 1, and a non-finite value falls back to the default.
 
 A host sets its own bound with `createBrowserApp(config, { …, maxIterations })`. The bound applies to all tools alike.
 
@@ -405,5 +405,5 @@ The server does not need to support resources, prompts, or sampling for V1 compa
 | Remote OAuth for MCP servers | Users manage tokens manually via Bearer token field                          |
 | SSE fallback transport       | Streamable HTTP is the standard remote transport                             |
 | stdio servers                | Browser-to-local-process communication is not feasible without a local proxy |
-| Parallel tool calls          | One tool call per step; a turn makes up to `maxIterations - 1` of them       |
+| Parallel tool calls          | One tool call per step; a turn makes at most `maxIterations` of them         |
 | Streaming tool results       | MCP call results are collected in full before being returned                 |

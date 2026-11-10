@@ -30,15 +30,28 @@ export type RuntimeErrorReporter = (error: Error) => void
 
 // The per-turn step bound (issue #510, T4): how many decisions a turn may take
 // before the runtime stops and synthesizes from what it has. In the ReAct loop
-// every decision counts, the closing "final" one included, so 16 leaves room for
-// fifteen tool calls — an iterative MCP workflow (create a project, place parts,
-// wire, check, fix, check again, plan, export) needs ten or more, which the old
-// default of 5 cut off half way. Plan-execute caps its plan at this many steps
-// and Hybrid caps its total sub-loop iterations at it.
+// every decision counts, the closing "final" one included: a turn makes at most
+// 16 tool calls, or 15 when the model ends it with its own closing decision. An
+// iterative MCP workflow (create a project, place parts, wire, check, fix, check
+// again, plan, export) needs ten or more, which the old default of 5 cut off
+// half way. Plan-execute caps its plan at this many steps and Hybrid caps its
+// total sub-loop iterations at it.
 export const DEFAULT_MAX_ITERATIONS = 16
 
+// A bound below one would let a turn take no decision at all, not even the one
+// that answers, so it is raised to 1. A fractional bound is floored. A
+// non-finite one (NaN, Infinity) falls back to the default rather than meaning
+// "unbounded".
+const normalizeMaxIterations = (value: number | undefined): number =>
+  value === undefined || !Number.isFinite(value)
+    ? DEFAULT_MAX_ITERATIONS
+    : Math.max(1, Math.floor(value))
+
 export type AgentRuntimeOptions = {
-  /** Per-turn step bound. Defaults to {@link DEFAULT_MAX_ITERATIONS}. */
+  /**
+   * Per-turn step bound. Defaults to {@link DEFAULT_MAX_ITERATIONS}; values below
+   * 1 are raised to 1, and a non-finite value falls back to the default.
+   */
   maxIterations?: number
   maxToolCallsPerStep?: number
   toolTimeoutMs?: number
@@ -177,7 +190,7 @@ export abstract class AgentRuntimeBase {
     protected readonly registry: ToolRegistry,
     options: AgentRuntimeOptions = {}
   ) {
-    this.maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS
+    this.maxIterations = normalizeMaxIterations(options.maxIterations)
     this.maxToolCallsPerStep = options.maxToolCallsPerStep ?? 1
     this.toolTimeoutMs = options.toolTimeoutMs ?? 10_000
     this.stepTimeoutMs = options.stepTimeoutMs ?? 15_000

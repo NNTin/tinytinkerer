@@ -291,10 +291,12 @@ export const createBrowserApp = (
     appAssistantPolicy?: AppAssistantPolicy
     /**
      * How many steps one chat turn may take (issue #510, T4). Every decision the
-     * agent makes counts, so a ReAct turn gets `maxIterations - 1` tool calls
-     * plus its closing decision before it synthesizes from what it has. Omitted
-     * keeps the runtime default (`DEFAULT_MAX_ITERATIONS`, 16), which is enough
-     * for an iterative MCP workflow of ten or more sequential calls.
+     * agent makes counts, its closing one included: a ReAct turn makes at most
+     * `maxIterations` tool calls, or `maxIterations - 1` when the model ends it
+     * with its own closing decision, and then synthesizes from what it has.
+     * Omitted keeps the runtime default (`DEFAULT_MAX_ITERATIONS`, 16), which is
+     * enough for an iterative MCP workflow of ten or more sequential calls.
+     * Values below 1 are raised to 1.
      */
     maxIterations?: number
     /**
