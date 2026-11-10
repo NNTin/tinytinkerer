@@ -140,6 +140,76 @@ methods, the way the Canvas, IDE and Mermaid stages do. Each method becomes a to
 calls `handle.request(method, input)`. See [Integrated application shells](./app-shell.md) for the
 pattern.
 
+### MCP servers
+
+`mcpServers` gives every user of your app an MCP server of yours, for example KiPrint for
+CanFactory. Each entry is a `HostMcpServer`:
+
+```ts
+import type { HostMcpServer } from '@nntin/tinytinkerer-embed'
+
+const mcpServers: HostMcpServer[] = [
+  { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.nntin.xyz/mcp' }
+]
+
+const app = createBrowserApp(config, { plugins, mcpServers })
+```
+
+- **No token in the browser.** `HostMcpServer` has no token field. Ask the edge's operator to:
+  - add the server's hostname to the edge's `MCP_HOST_SERVERS` var;
+  - put the token in the `MCP_HOST_TOKENS` secret, a JSON object mapping hostname to token.
+
+  For those hosts the edge drops any token the browser sends and injects its own. The hosts stay
+  reachable even when the edge restricts MCP hosts with `MCP_ALLOWED_HOSTS`. The TinyTinkerer
+  edges list `kiprint.nntin.xyz` (production) and `kiprint-preview.nntin.xyz` (develop). See
+  [Host-provided MCP servers](../self-hosting/vercel-deployment.md#host-provided-mcp-servers) for
+  the edge side.
+
+- **Ids:** an `id` must be unique and contain no `:`. `createBrowserApp` throws otherwise. Tools
+  register as `mcp:<id>:<toolName>`. They run in the same tool-calling loop as your
+  `appToolGroup`, so one turn can chain many calls.
+- **Discovery:** discovery runs during `initializeBrowserApp`, and again whenever the user signs in,
+  signs out or switches accounts. While signed out it sends nothing, because the edge's MCP routes
+  need a signed-in caller.
+- **Not the user's to manage.** The servers and their tool lists live in memory only, and are
+  never written to the user's settings. Settings lists them above the user's own servers, marked
+  "Provided by this app", with their sync status and nothing to toggle, edit or remove. Users can
+  still add their own servers beside them.
+
+#### Links your MCP server returns
+
+Tool results pass through the edge unmodified. KiPrint's `export_project`, for instance, returns a
+signed, expiring `https://kiprint.nntin.xyz/downloads/<token>` URL. The browser fetches it straight
+from KiPrint.
+
+- **No link rule in `appAssistantPolicy`:** every `http(s)` link in an answer stays clickable. The
+  download URL works with no extra setup.
+- **A link allowlist:** if your policy demotes links it cannot verify (in `prepareRenderedContent`
+  and `finalizeAnswer`), allow the links your server actually returned. Each result from a host
+  server reaches the policy as an `AppToolResultRecord` with `source: { kind: 'mcp', groupId: '<id>' }`,
+  and its `output.text` is the server's text exactly as sent:
+
+```ts
+import type { AppToolResultRecord } from '@nntin/tinytinkerer-embed'
+
+// The KiPrint URLs this turn's successful results actually returned.
+const kiprintLinks = (results: readonly AppToolResultRecord[]): Set<string> =>
+  new Set(
+    results
+      .filter((result) => result.source?.kind === 'mcp' && result.source.groupId === 'kiprint')
+      .flatMap((result) => {
+        const text = (result.output as { text?: unknown }).text
+        return typeof text === 'string' ? (text.match(/https:\/\/[^\s"'<>)]+/g) ?? []) : []
+      })
+      .filter((url) => new URL(url).hostname === 'kiprint.nntin.xyz')
+  )
+```
+
+Keep a link when its URL is in this set, and demote it otherwise. Match the exact URLs, not just
+the host: an answer could otherwise carry a KiPrint path the server never issued. Only successful
+results reach the policy, so a failed call can never authorize a link. See
+[MCP integration](../plugins-and-tools/mcp-integration.md#results-and-links) for more on results and links.
+
 ## Sign-in
 
 With `authMode: 'oauth'`, sign-in is required: a signed-out `ChatApp` shows a "Sign in with GitHub"
