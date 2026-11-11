@@ -16,7 +16,7 @@ import {
   type PlanStep,
   type ReActDecision
 } from '@tinytinkerer/contracts'
-import { composeSystemPrompt, SYSTEM_STYLE_PROMPT } from './system-prompt'
+import { composeSystemPrompt, SYSTEM_STYLE_PROMPT, systemStylePrompt } from './system-prompt'
 import type { AppInstructionBoundary } from '../app-assistant-policy'
 import { createRateLimitError } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
@@ -76,6 +76,9 @@ type LiteLLMProviderOptions = {
   // to the tools that registered for this runtime. Absent for every app that
   // contributes none, which leaves all three prompts exactly as they were.
   appInstructions?: (boundary: AppInstructionBoundary) => string | undefined
+  // The host app's replacement for the answer prompt's identity line (issue
+  // #518, F6). Absent keeps "You are tinytinkerer…".
+  identity?: string
 }
 
 // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE path
@@ -280,7 +283,7 @@ export class LiteLLMProvider implements ModelProvider {
           {
             role: 'system',
             content: composeSystemPrompt(
-              SYSTEM_STYLE_PROMPT,
+              systemStylePrompt(this.options.identity),
               this.options.appInstructions?.('synthesis')
             )
           },

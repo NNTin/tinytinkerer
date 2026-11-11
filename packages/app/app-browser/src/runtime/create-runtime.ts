@@ -483,6 +483,11 @@ export const createRuntime = (options: {
       // the app for that verb. Unlike interchangeable plugin tools, a missing app
       // verb is a shell misconfiguration — a verb id colliding with a tool id —
       // so surface it instead of letting it fail silently at model-call time.
+      // On the console too (issue #518, F11): an embedding host usually runs no
+      // TinyTinkerer telemetry, so the message below would reach nobody.
+      console.warn(
+        `[tinytinkerer] app tool "${tool.id}" was dropped: a plugin or MCP tool already has that id`
+      )
       captureTelemetryMessage(
         `app tool "${tool.id}" was dropped: its id collides with an existing tool`,
         {
@@ -553,6 +558,7 @@ export const createRuntime = (options: {
       activePluginModules.some((mod) => mod.manifest.inspectorDescriptor)
         ? { onForwardRequest: captureForwardedRequest }
         : {}),
+      ...(appPolicy?.identity ? { identity: appPolicy.identity } : {}),
       ...(policyInstructions || hostMcpNote
         ? {
             appInstructions: (boundary) =>

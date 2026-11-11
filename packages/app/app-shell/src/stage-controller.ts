@@ -1,4 +1,5 @@
-type ControllerMethodKey<TController extends object> = {
+/** The keys of `TController` whose values are methods: what a handle can `request`. */
+export type StageControllerMethod<TController extends object> = {
   [TKey in keyof TController]: TController[TKey] extends (...args: never[]) => unknown
     ? TKey
     : never
@@ -6,17 +7,24 @@ type ControllerMethodKey<TController extends object> = {
 
 export type StageControllerHandle<TController extends object> = {
   setController(controller: TController | null): void
-  request(method: ControllerMethodKey<TController>, input?: unknown): Promise<unknown>
+  request(method: StageControllerMethod<TController>, input?: unknown): Promise<unknown>
 }
 
 const normalizeError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error))
 
-// Stable in-process indirection between tools created during shell bootstrap and a
-// stage controller that mounts later. The controller is trusted and in-process; this
-// seam avoids transport and serialization concerns while keeping tool setup stable.
+/**
+ * A stable handle to a stage controller that mounts later: tools built at
+ * startup call `request(method, input)`, and the stage calls
+ * `setController(controller)` when it mounts (and `setController(null)` when it
+ * unmounts). Until then every request rejects with `notMountedMessage`, which
+ * the model reads as the tool's error.
+ *
+ * In-process indirection, not a transport: the controller is trusted, and
+ * inputs and outputs are passed by reference.
+ */
 export const createStageControllerHandle = <TController extends object>(
-  loadingMessage: string
+  notMountedMessage: string
 ): StageControllerHandle<TController> => {
   let controller: TController | null = null
 
@@ -25,7 +33,7 @@ export const createStageControllerHandle = <TController extends object>(
       controller = next
     },
     request(method, input) {
-      if (!controller) return Promise.reject(new Error(loadingMessage))
+      if (!controller) return Promise.reject(new Error(notMountedMessage))
       const member = controller[method]
       if (typeof member !== 'function') {
         return Promise.reject(

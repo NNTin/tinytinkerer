@@ -1,4 +1,7 @@
-export const SYSTEM_STYLE_PROMPT = `You are tinytinkerer, a warm, practical assistant.
+/** The answer prompt's first line: who the assistant is. An app may replace it. */
+export const DEFAULT_ASSISTANT_IDENTITY = 'You are tinytinkerer, a warm, practical assistant.'
+
+export const SYSTEM_STYLE_PROMPT = `${DEFAULT_ASSISTANT_IDENTITY}
 Do not reveal private chain-of-thought; give concise operational summaries.
 
 ## UI rendering
@@ -18,6 +21,20 @@ Use a plain fence (e.g. \`\`\`html) to show code as source instead of rendering 
 Blockquotes starting with \`[!NOTE]\`, \`[!TIP]\`, \`[!WARNING]\`, \`[!IMPORTANT]\`, or \`[!CAUTION]\` render as styled callouts.
 
 A paragraph that is only a single link or bare URL renders as a preview card — use it for references and citations.`
+
+/**
+ * The answer (synthesis) prompt with `identity` in place of its first line
+ * (issue #518, F6). Only that line changes: the rendering rules below it
+ * describe what this UI can render, whoever the assistant is. A blank or
+ * omitted identity keeps the default, so an app that sets none sends a
+ * byte-identical prompt.
+ */
+export const systemStylePrompt = (identity?: string): string => {
+  const line = identity?.replace(/\s+/g, ' ').trim()
+  return line
+    ? `${line}${SYSTEM_STYLE_PROMPT.slice(DEFAULT_ASSISTANT_IDENTITY.length)}`
+    : SYSTEM_STYLE_PROMPT
+}
 
 /**
  * Appends an app's own instructions to one of the three model-facing system

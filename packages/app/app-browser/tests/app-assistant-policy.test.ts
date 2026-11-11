@@ -101,6 +101,41 @@ describe('an app assistant policy', () => {
     expect(synthesis).toContain('POLICY(synthesis)')
   })
 
+  it('replaces only the identity line of the answer prompt (#518 F6)', async () => {
+    const test = harness({
+      responses: [prose('no tool needed'), prose('the answer')],
+      policy: {
+        identity: "You are CanFactory's assistant,\n  a careful PCB helper.",
+        instructions: ({ boundary }) => `POLICY(${boundary})`
+      }
+    })
+    await test.run()
+    // After the run: each harness stubs the global fetch.
+    const baseline = harness({ responses: [prose('no tool needed'), prose('the answer')] })
+    await baseline.run()
+
+    const [decision, synthesis] = test.systemPrompts()
+    const [baselineDecision, baselineSynthesis] = baseline.systemPrompts()
+    expect(synthesis?.split('\n')[0]).toBe("You are CanFactory's assistant, a careful PCB helper.")
+    expect(synthesis).not.toContain('You are tinytinkerer')
+    // The rendering rules after the identity line, and the policy, stay.
+    expect(synthesis).toContain(baselineSynthesis?.split('\n').slice(1).join('\n'))
+    expect(synthesis).toMatch(/POLICY\(synthesis\)$/)
+    // The decision prompt has a role, not an identity: unchanged but for the policy.
+    expect(decision).toBe(`${baselineDecision}\n\nPOLICY(decision)`)
+  })
+
+  it('keeps the default identity for a blank one', async () => {
+    const test = harness({
+      responses: [prose('no'), prose('answer')],
+      policy: { identity: '   ' }
+    })
+    await test.run()
+    const baseline = harness({ responses: [prose('no'), prose('answer')] })
+    await baseline.run()
+    expect(test.systemPrompts()).toEqual(baseline.systemPrompts())
+  })
+
   it('binds its instructions to the app tools that actually registered', async () => {
     const instructions = vi.fn(() => 'POLICY')
     const test = harness({

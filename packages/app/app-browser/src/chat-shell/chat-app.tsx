@@ -270,7 +270,18 @@ const UncontrolledChatApp = ({
 // this in AppBrowserProvider) rendered through a pluggable layout shell. Because
 // only the layout wrapper swaps on morph, the conversation and an in-flight run
 // survive the dock/undock toggle.
-export const ChatApp = (props: ChatAppProps): ReactNode => {
+//
+// Overloaded, one signature per arm of `ChatAppProps` (issue #518, F10). Against
+// the bare union, a controlled ChatApp missing `onPresentationChange` lost the
+// contextual type of an inline `presentation={{ mode: 'sidebar', … }}` and was
+// reported as "Type 'string' is not assignable to type 'ChatMode'". Per-arm
+// signatures keep the literal typed, so the error names the missing prop. The
+// last signature still takes the union, for a caller that spreads a
+// `ChatAppProps` value.
+export function ChatApp(props: UncontrolledChatAppProps): ReactNode
+export function ChatApp(props: ChatAppLayoutProps): ReactNode
+export function ChatApp(props: ChatAppProps): ReactNode
+export function ChatApp(props: ChatAppProps): ReactNode {
   // `presentation` is the discriminant of the public union: TypeScript makes a
   // partial controlled configuration unrepresentable, while this branch keeps
   // the runtime wrapper from growing a second set of defaults or transitions.

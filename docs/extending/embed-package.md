@@ -81,10 +81,12 @@ that, such as finishing GitHub's sign-in redirect, imports `@nntin/tinytinkerer-
 | `isGitHubOAuthCallback`                 | Whether a URL (default: the current location) is that callback                                         |
 | `isSignInRequired`                      | Whether an app's shell requires sign-in before it answers (`authMode: 'oauth'`)                        |
 | `createStageTools`                      | Turns a request handle plus a method table into `Tool`s, as the integrated stages do                   |
+| `createStageControllerHandle`           | A stable handle your tools call, for a controller that mounts later                                    |
 | `z`                                     | The Zod instance the runtime reads tool schemas with                                                   |
 | `loadPlugins`, `CATALOGUE_PLUGIN_NAMES` | The plugin catalogue: load a named subset, or list every name                                          |
 | `genericToolTreeSummarizer`             | The fallback tool-picker mapper for an app with its own tools                                          |
 | `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES`  | The `documentGlobals` value for a page that owns everything                                            |
+| `EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES` | The `documentGlobals` value for an embedding host: all four `false`                                    |
 | `NO_GLOBAL_HOST_CAPABILITIES`           | The `globalHosts` value for a shell that mounts no document-level dialogs                              |
 | `useHostMcp`                            | React hook over `app.stores.hostMcp`: your MCP servers and their discovery status                      |
 | `hostMcpServerStatus`                   | One host server's status: `syncing`, `signed-out`, `available` or `unavailable` (with its error)       |
@@ -95,9 +97,9 @@ Types: `AppTool`, `AppToolGroup`, `AppToolRunBindings`, `AppToolRunImplementatio
 `AppInstructionBoundary`, `AppToolResultRecord`, `AppSignIn`, `BrowserApp`, `BrowserAppShellProps`,
 `BrowserAuthMode`, `BrowserShell`, `BrowserShellBootstrapOptions`, `BrowserShellConfig`, `CataloguePluginName`,
 `ChatAppProps`, `ChatDockEdge`, `ChatLoadingComponent`, `ChatMode`, `ChatPresentation`,
-`ConversationResetBehavior`, `CreateStageToolsOptions`, `DocumentGlobalCapabilities`,
+`ConversationResetBehavior`, `CreateControllerStageToolsOptions`, `CreateStageToolsOptions`, `DocumentGlobalCapabilities`,
 `GlobalHostCapabilities`, `HostMcpServer`, `HostMcpServerStatus`, `HostMcpState`, `HostMcpStore`, `PluginCatalogue`, `PreSendDisclosure`, `ShellThemeTokens`,
-`StageToolDefinition`, `StageToolRequestHandle`, `ToolTreeSummarizer`, `ToolTreeView`.
+`StageControllerHandle`, `StageControllerMethod`, `StageToolDefinition`, `StageToolRequestHandle`, `ToolTreeSummarizer`, `ToolTreeView`.
 
 Two subpath exports carry the stylesheets: `@nntin/tinytinkerer-embed/embed.css` and
 `@nntin/tinytinkerer-embed/styles.css`.
@@ -137,14 +139,58 @@ one assistant on it.
 | `plugins`            | Required. A function returning this app's plugins, usually `() => loadPlugins([...names])`. There is no default: name the subset you offer. `() => Promise.resolve([])` offers none                                                                                                                                                                                                                      |
 | `appToolGroup`       | Your own always-on tools, as one `AppToolGroup` (`{ id, label, tools }`). They are registered in the runtime and shown in the tool picker as one group. They run in the runtime's tool-calling loop, which means the model reads each result before it picks the next call                                                                                                                               |
 | `mcpServers`         | MCP servers the host provides, as `HostMcpServer[]` (`{ id, name, url, required? }`, no token). They are discovered at boot and their tools register as `mcp:<id>:<tool>`. They are not stored in the user's settings and are read-only there. The edge injects each server's token, so the browser never holds it. See [MCP integration](../plugins-and-tools/mcp-integration.md#host-provided-servers) |
-| `appAssistantPolicy` | Your grounding and answer policy: instruction boundaries, and which links the transcript may render                                                                                                                                                                                                                                                                                                      |
+| `appAssistantPolicy` | Your grounding and answer policy: `identity` (replaces the answer prompt's "You are tinytinkerer…" line, see [The assistant's identity](#the-assistants-identity)), instructions per boundary, and which links the transcript may render                                                                                                                                                                 |
 | `starterPrompts`     | Suggestions shown on an empty conversation, before plugin or generic ones                                                                                                                                                                                                                                                                                                                                |
-| `documentGlobals`    | Which document-wide effects this app owns: `brandMetadata` (TinyTinkerer's favicon/manifest/theme-colour in `<head>`), `telemetry`, `contentRenderReporter`, `oauthCallbackWatchdog`. Omitted fields default to `true`. A host that owns its `<head>` and runs no TinyTinkerer telemetry sets the first two to `false`                                                                                   |
+| `documentGlobals`    | Which document-wide effects this app owns. Omitted fields default to `true`. An embedding host passes `EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES`, which sets all four to `false`. See [Document globals](#document-globals)                                                                                                                                                                                 |
+| `maxIterations`      | How many steps one chat turn may take (default 16). Every decision counts, the closing one included, so a ReAct turn makes at most `maxIterations` tool calls, then answers from what it has. Raise it for a long sequential MCP workflow. Values below 1 are raised to 1                                                                                                                                |
 | `signIn`             | A host-provided sign-in action. Return `true` if the host started a sign-in. Omitted, the shell's own GitHub OAuth is the only route                                                                                                                                                                                                                                                                     |
 | `toolTreeSummarizer` | The fallback tool-picker mapper. Pass `genericToolTreeSummarizer` with an `appToolGroup`, so the picker shows your tools even with the tool-tree plugin switched off                                                                                                                                                                                                                                     |
 | `conversationReset`  | What the reset control does: `'clear-in-place'` (the default) or `'restart'`, which aborts the run and starts a fresh conversation                                                                                                                                                                                                                                                                       |
 | `preSendDisclosure`  | A one-time notice that must be acknowledged before the first message is sent                                                                                                                                                                                                                                                                                                                             |
 | `humanInput`         | Whether this app can ask its user a question in the middle of a run (default `true`). Set it to `false` if none of your tools or plugins asks, and the prompt renderer is never loaded                                                                                                                                                                                                                   |
+
+### Document globals
+
+Each of these writes to state there is only one of per page. Exactly one app on a page should own
+each:
+
+| Field                   | What it does when `true`                                                                                                                         | Embedding host |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| `brandMetadata`         | Writes TinyTinkerer's favicon, manifest and `theme-color` into your `<head>`                                                                     | `false`        |
+| `telemetry`             | Configures TinyTinkerer's Sentry telemetry, restores the user's consent at boot, and offers the consent toggle in Settings                       | `false`        |
+| `contentRenderReporter` | Registers the sink that reports a renderer crash (a Mermaid diagram that throws, say) to that telemetry. Without telemetry it has nobody to tell | `false`        |
+| `oauthCallbackWatchdog` | Arms a 10-second boot timer that reports to telemetry when a GitHub callback URL was never handled. Sign-in itself works without it              | `false`        |
+
+So a host that runs no TinyTinkerer telemetry turns all four off:
+
+```ts
+import { createBrowserApp, EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES } from '@nntin/tinytinkerer-embed'
+
+const app = createBrowserApp(config, {
+  plugins,
+  documentGlobals: EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES
+})
+```
+
+### The assistant's identity
+
+The answer prompt starts with "You are tinytinkerer, a warm, practical assistant." Set
+`appAssistantPolicy.identity` to replace that line:
+
+```ts
+const app = createBrowserApp(config, {
+  plugins,
+  appAssistantPolicy: {
+    identity: "You are CanFactory's assistant. You help people design perfboard circuits."
+  }
+})
+```
+
+It is one line: newlines become spaces, and a blank value keeps the default. The rest of that
+prompt stays, because it describes what this UI can render. Your `instructions` for the `synthesis`
+boundary are still appended after it. The planning and decision prompts state a role ("You are a
+planning assistant…") rather than an identity, so `identity` leaves them alone; add to them with
+`instructions`.
 
 ### Tools
 
@@ -157,6 +203,67 @@ installation would depend on two copies agreeing about each other's internals.
 methods, the way the Canvas, IDE and Mermaid stages do. Each method becomes a tool whose `execute`
 calls `handle.request(method, input)`. See [Integrated application shells](./app-shell.md) for the
 pattern.
+
+Your tools are built before your editor mounts, so give them a handle to call instead of the editor
+itself. `createStageControllerHandle<TController>(notMountedMessage)` returns one. Your editor calls
+`handle.setController(controller)` when it mounts and `handle.setController(null)` when it unmounts.
+Until then, every call rejects with `notMountedMessage`, and the model reads that as the tool's error:
+
+```ts
+import { createStageControllerHandle, createStageTools, z } from '@nntin/tinytinkerer-embed'
+
+type EditorController = {
+  getEditorState: (input: unknown) => Promise<unknown>
+  setModelParameters: (input: unknown) => Promise<unknown>
+}
+
+export const editorHandle = createStageControllerHandle<EditorController>(
+  'The editor is still loading'
+)
+
+const tools = createStageTools<EditorController>({
+  handle: editorHandle,
+  methods: {
+    getEditorState: {
+      description: "Read the editor's current model.",
+      schema: z.object({}),
+      outputSchema: z.object({ parts: z.array(z.string()) })
+    },
+    setModelParameters: {
+      description: 'Change model parameters.',
+      schema: z.object({ width: z.number().optional() })
+    }
+  }
+})
+```
+
+- **Type-checked.** With a `StageControllerHandle`, the method table is checked against the
+  controller: a key that isn't one of its methods is a type error. Name the controller explicitly,
+  as above, and a method missing from the table is an error too.
+- **Output schemas.** `outputSchema` is optional. When set, the runtime validates what the method
+  returns before the model sees it, and a result that doesn't match fails the call.
+
+#### Tool ids and collisions
+
+The model sees your tools under their bare ids (`getEditorState`). Tools from MCP servers are
+namespaced as `mcp:<server id>:<tool>`, so they never clash with yours. Plugin tools have bare ids
+too, such as `web_search`, `ask_user`, `read_dom` and `run_javascript`.
+
+Ids share one space, and the first tool registered under an id wins. Tools register in this order:
+
+1. MCP servers: yours (`mcpServers`) first, then the user's.
+2. Plugins.
+3. Your `appToolGroup`.
+
+So if one of your tools shares an id with an active plugin's tool, **the plugin's tool wins**, and
+yours is dropped from every turn. The runtime logs
+`[tinytinkerer] app tool "<id>" was dropped: a plugin or MCP tool already has that id` to the
+console. Give your tools ids no catalogue plugin uses. A prefix, such as `canfactory_get_state`, is
+the simplest way.
+
+A plugin can't impersonate your tools to your policy either. Every result your
+`appAssistantPolicy` sees carries a `source` the runtime stamps: `{ kind: 'app', groupId }` for your
+tools, `{ kind: 'mcp', groupId: <server id> }` for MCP tools.
 
 ### MCP servers
 
@@ -316,6 +423,48 @@ subpath, then restores the URL it returns. It does so in a promise chain before 
 top-level `await`, which can deadlock the entry. The whole flow, the edge's checks on it, and where
 the token is stored are described in [GitHub sign-in for embedding hosts](./host-sign-in.md).
 
+## `ChatApp` props
+
+`storageKey` and `LoadingComponent` are required. `storageKey` is the base `localStorage` key for
+the layout's size and position.
+
+The layout is either uncontrolled or controlled:
+
+- **Uncontrolled:** pass `mode` (`'floating'` or `'sidebar'`, default `'floating'`). ChatApp keeps
+  the presentation itself and persists it under `storageKey`.
+- **Controlled:** pass `presentation` (`{ mode, minimized, edge }`) and `onPresentationChange`
+  together. ChatApp then persists no presentation of its own.
+
+Mixing the two, or passing `presentation` without `onPresentationChange`, is a type error.
+
+| Prop                                                     | Applies to | Meaning                                                                                                                                        |
+| -------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `morphable`                                              | both       | Offers the dock/undock toggle and edge snapping (default `true`). A morphable docked panel is always resizable. Pass `false` to pin the layout |
+| `side`                                                   | docked     | `'left'` or `'right'` (default `'right'`): the edge the dock button docks to, and the uncontrolled default                                     |
+| `fill`                                                   | docked     | Fills the parent's height instead of the viewport's. Use it when the panel sits in a bounded region of your layout                             |
+| `resizable`                                              | docked     | A resize handle on the panel. Ignored (always on) when `morphable`                                                                             |
+| `sizeVariant`                                            | docked     | `'comfortable'` (default) or `'mobile'`, a full-bleed phone layout                                                                             |
+| `framed`                                                 | floating   | Draws a rounded card around the conversation inside the window (default `false`)                                                               |
+| `defaultWidth`, `defaultHeight`, `minWidth`, `minHeight` | floating   | The floating window's initial and minimum size, in pixels                                                                                      |
+| `stageClassName`                                         | both       | An extra class on the layout's outer stage element, e.g. to position it or make it click-through                                               |
+| `starterPrompts`, `starterPromptCount`                   | both       | Replace the app's `starterPrompts` on this surface, and how many to offer                                                                      |
+
+A host that docks the assistant into its own pane, rather than over the page, passes
+`mode="sidebar"`, `fill`, `morphable={false}` and the `side` it occupies:
+
+```tsx
+<div style={{ height: '100%' }}>
+  <ChatApp
+    storageKey="canfactory-assistant"
+    LoadingComponent={Loading}
+    mode="sidebar"
+    side="right"
+    fill
+    morphable={false}
+  />
+</div>
+```
+
 ## Stylesheets
 
 Load both stylesheets, and put the class `tt-app-embed` on the element that wraps the assistant:
@@ -415,6 +564,7 @@ import {
   BrowserAppShell,
   ChatApp,
   createBrowserApp,
+  EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES,
   genericToolTreeSummarizer,
   loadPlugins,
   resolveBrowserShellBootstrapConfig,
@@ -457,7 +607,7 @@ const app = createBrowserApp(config, {
   appToolGroup: tools,
   toolTreeSummarizer: genericToolTreeSummarizer,
   starterPrompts: ['How big is a perfboard-70x90?'],
-  documentGlobals: { brandMetadata: false, telemetry: false },
+  documentGlobals: EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES,
   humanInput: false
 })
 

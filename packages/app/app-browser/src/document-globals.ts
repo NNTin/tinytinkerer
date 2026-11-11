@@ -57,6 +57,21 @@ export const DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES: DocumentGlobalCapabilities = 
   oauthCallbackWatchdog: true
 }
 
+/**
+ * The `documentGlobals` value for an app embedded in someone else's page
+ * (issue #518, F10): it owns none of the four. The host keeps its own `<head>`,
+ * and no TinyTinkerer telemetry runs, so its content-render reporter (a sink
+ * that only feeds telemetry) and its OAuth callback watchdog (a timer that only
+ * reports a stuck callback to telemetry) have nothing to do either. Sign-in
+ * itself works without the watchdog.
+ */
+export const EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES: DocumentGlobalCapabilities = {
+  brandMetadata: false,
+  telemetry: false,
+  contentRenderReporter: false,
+  oauthCallbackWatchdog: false
+}
+
 export const resolveDocumentGlobalCapabilities = (
   overrides: Partial<DocumentGlobalCapabilities> = {}
 ): DocumentGlobalCapabilities => ({ ...DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES, ...overrides })
