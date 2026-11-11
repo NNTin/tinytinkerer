@@ -44,20 +44,27 @@ export type BrowserShellBootstrapOptions = {
 }
 /* eslint-enable no-restricted-syntax */
 
+// `| undefined` on every field for the same reason (issue #518, F9): a host
+// that builds the config straight from its own runtime config
+// (`githubClientId: runtime.githubClientId`) must compile under
+// `exactOptionalPropertyTypes`. Every reader below treats `undefined` and an
+// omitted field alike.
+/* eslint-disable no-restricted-syntax */
 export type BrowserShellConfig = {
-  edgeBaseUrl?: string
-  storageNamespace?: string
-  authMode?: BrowserAuthMode
-  githubClientId?: string
-  githubRedirectUri?: string
-  manifestStartUrl?: string
-  hostToken?: string | null
-  sentryDsn?: string
-  sentryEnvironment?: string
-  appVersion?: string
-  buildHash?: string
-  theme?: ShellThemeTokens
+  edgeBaseUrl?: string | undefined
+  storageNamespace?: string | undefined
+  authMode?: BrowserAuthMode | undefined
+  githubClientId?: string | undefined
+  githubRedirectUri?: string | undefined
+  manifestStartUrl?: string | undefined
+  hostToken?: string | null | undefined
+  sentryDsn?: string | undefined
+  sentryEnvironment?: string | undefined
+  appVersion?: string | undefined
+  buildHash?: string | undefined
+  theme?: ShellThemeTokens | undefined
 }
+/* eslint-enable no-restricted-syntax */
 
 export type ResolvedBrowserShellConfig = {
   edgeBaseUrl: string

@@ -11,6 +11,10 @@
  *    the workspace), every catalogue plugin is its own chunk, and the static
  *    graph stays under a byte budget.
  * 3. **The stylesheets exist**, and `embed.css` is still scoped.
+ * 4. **The `/oauth` subpath is light** (issue #518, F3). A host imports it from
+ *    its EAGER entry, so its static graph must stay a few kilobytes: no peer
+ *    (React), no chunk the runtime entry also needs beyond the one small chunk
+ *    the two share.
  *
  * The JavaScript checks read the chunk graph the bundler itself recorded
  * (`.build/bundle-graph.json`, written by vite.config.ts) rather than
@@ -33,6 +37,11 @@ const PEER_SPECIFIER = /^react(-dom)?(\/.*)?$/
 // line below prints it). The point is to catch a heavy module — mermaid alone
 // is megabytes — being pulled onto the static path, not to police kilobytes.
 const STATIC_GRAPH_BUDGET_BYTES = 3_000_000
+
+// The `/oauth` subpath's whole static graph (~5 KB unminified when written).
+// Anything near this means a runtime module — the telemetry client, Zod, a
+// store — leaked into what a host pays at startup.
+const OAUTH_GRAPH_BUDGET_BYTES = 16_000
 
 // Chunks that must only ever be reached lazily: exactly the code that sits
 // behind a dynamic import() in the workspace itself. Every catalogue plugin and
@@ -122,16 +131,26 @@ for (const path of declarationFiles) {
 }
 
 // ── 2. the entry's static graph ─────────────────────────────────────────────
-const staticGraph = new Set()
-const pending = ['index.js']
-while (pending.length > 0) {
-  const chunk = pending.pop()
-  if (staticGraph.has(chunk) || !(chunk in graph)) {
-    continue
+/** Every chunk an entry's static imports reach, and every bare specifier among them. */
+const staticClosure = (entry) => {
+  const chunks = new Set()
+  const bare = new Set()
+  const pending = [entry]
+  while (pending.length > 0) {
+    const chunk = pending.pop()
+    if (!(chunk in graph)) {
+      bare.add(chunk)
+      continue
+    }
+    if (chunks.has(chunk)) {
+      continue
+    }
+    chunks.add(chunk)
+    pending.push(...graph[chunk].imports)
   }
-  staticGraph.add(chunk)
-  pending.push(...graph[chunk].imports)
+  return { chunks, bare }
 }
+const staticGraph = staticClosure('index.js').chunks
 
 let staticBytes = 0
 for (const chunk of staticGraph) {
@@ -172,6 +191,38 @@ for (const name of ['embed.css', 'styles.css']) {
 const embedCss = readFileSync(join(distDir, 'embed.css'), 'utf8')
 if (!embedCss.includes(':where(.tt-app-embed)')) {
   failures.push('dist/embed.css is no longer scoped to :where(.tt-app-embed)')
+}
+
+// ── 4. the /oauth subpath ───────────────────────────────────────────────────
+if (!('oauth.js' in graph)) {
+  failures.push('dist/oauth.js was not emitted (the `/oauth` subpath, issue #518 F3)')
+} else {
+  const oauth = staticClosure('oauth.js')
+  const oauthBytes = [...oauth.chunks].reduce((sum, chunk) => sum + graph[chunk].bytes, 0)
+  if (oauth.bare.size > 0) {
+    failures.push(
+      `the /oauth subpath imports ${[...oauth.bare].join(', ')}; it must import nothing a host resolves`
+    )
+  }
+  if (oauthBytes > OAUTH_GRAPH_BUDGET_BYTES) {
+    failures.push(
+      `the /oauth subpath's static graph is ${oauthBytes} bytes over ${oauth.chunks.size} chunks, ` +
+        `over the ${OAUTH_GRAPH_BUDGET_BYTES}-byte budget; a runtime module leaked into it`
+    )
+  }
+  if (graph['oauth.js'].dynamicImports.length > 0) {
+    failures.push(
+      `the /oauth subpath has dynamic imports (${graph['oauth.js'].dynamicImports.join(', ')}); it must not reach the runtime at all`
+    )
+  }
+  console.log(
+    `[embed] /oauth subpath: ${oauth.chunks.size} chunks / ${oauthBytes} bytes on its static graph`
+  )
+}
+for (const name of ['oauth.js', 'oauth.d.ts']) {
+  if (!files.includes(join(distDir, name))) {
+    failures.push(`dist/${name} was not emitted`)
+  }
 }
 
 if (failures.length > 0) {

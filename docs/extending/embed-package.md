@@ -62,7 +62,13 @@ release.
 
 ## What the package exports
 
-All exports come from the package root, `@nntin/tinytinkerer-embed`.
+All exports below come from the package root, `@nntin/tinytinkerer-embed`. The one exception is the
+[`/oauth` subpath](#the-oauth-subpath).
+
+**Never import the package root from eager code.** The root is not tree-shakeable: one static import
+from it, even of a string constant, can put the whole runtime in your startup bundle. Import it only
+from the module you load lazily ([Loading it lazily](#loading-it-lazily)). Code that must run before
+that, such as finishing GitHub's sign-in redirect, imports `@nntin/tinytinkerer-embed/oauth`.
 
 | Export                                  | What it is                                                                                             |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -72,6 +78,7 @@ All exports come from the package root, `@nntin/tinytinkerer-embed`.
 | `ChatApp`                               | The chat surface, in a floating or docked layout                                                       |
 | `completeGitHubOAuth`                   | Completes GitHub's redirect back to your page and signs the app in ([host sign-in](./host-sign-in.md)) |
 | `GITHUB_OAUTH_CALLBACK_PATH`            | The callback path to use as `githubRedirectUri`: `/auth/github/callback`                               |
+| `isGitHubOAuthCallback`                 | Whether a URL (default: the current location) is that callback                                         |
 | `isSignInRequired`                      | Whether an app's shell requires sign-in before it answers (`authMode: 'oauth'`)                        |
 | `createStageTools`                      | Turns a request handle plus a method table into `Tool`s, as the integrated stages do                   |
 | `z`                                     | The Zod instance the runtime reads tool schemas with                                                   |
@@ -91,6 +98,14 @@ Types: `AppTool`, `AppToolGroup`, `AppToolRunBindings`, `AppToolRunImplementatio
 
 Two subpath exports carry the stylesheets: `@nntin/tinytinkerer-embed/embed.css` and
 `@nntin/tinytinkerer-embed/styles.css`.
+
+### The `/oauth` subpath
+
+`@nntin/tinytinkerer-embed/oauth` is side-effect free and imports nothing: no React, no stores, no
+telemetry. It is safe to import from your eager entry. It exports `GITHUB_OAUTH_CALLBACK_PATH`,
+`isGitHubOAuthCallback(url?)` and a light `completeGitHubOAuth(config, url?)` that needs no
+`BrowserApp`: it saves the token, and the next app boot picks it up. See
+[Completing the callback](./host-sign-in.md#completing-the-callback).
 
 ## Configuration
 
@@ -226,10 +241,11 @@ a link the model or an injected instruction chose. See
 ## Sign-in
 
 With `authMode: 'oauth'`, sign-in is required: a signed-out `ChatApp` shows a "Sign in with GitHub"
-call to action instead of the composer, and sends nothing to the edge. On load, before mounting the
-chat, the host checks for `GITHUB_OAUTH_CALLBACK_PATH` and calls `completeGitHubOAuth(app)`, then
-restores the URL it returns. The whole flow, and the edge's checks on it, are described in
-[GitHub sign-in for embedding hosts](./host-sign-in.md).
+call to action instead of the composer, and sends nothing to the edge. On load, in its eager entry,
+the host checks `isGitHubOAuthCallback()` and calls `completeGitHubOAuth(config)` from the `/oauth`
+subpath, then restores the URL it returns. It does so in a promise chain before rendering, not with a
+top-level `await`, which can deadlock the entry. The whole flow, the edge's checks on it, and where
+the token is stored are described in [GitHub sign-in for embedding hosts](./host-sign-in.md).
 
 ## Stylesheets
 
@@ -254,17 +270,40 @@ dialogs stay behind their own `import()`s, as separate chunks fetched only when 
 
 ## A minimal host
 
+```ts title="src/assistant-options.ts"
+// Shared by the eager entry and the lazy assistant. Imports only the side-effect-free subpath.
+import { GITHUB_OAUTH_CALLBACK_PATH } from '@nntin/tinytinkerer-embed/oauth'
+
+export const assistantOptions = {
+  edgeBaseUrl: 'https://api.tiny.nntin.xyz',
+  storageNamespace: 'canfactory',
+  githubRedirectUri: `${window.location.origin}${GITHUB_OAUTH_CALLBACK_PATH}`
+}
+```
+
 ```tsx title="src/main.tsx"
 import { Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
+import { completeGitHubOAuth, isGitHubOAuthCallback } from '@nntin/tinytinkerer-embed/oauth'
+import { assistantOptions } from './assistant-options'
 
-// Nothing from the package loads until this resolves.
+// Nothing from the package root loads until this resolves.
 const Assistant = lazy(() => import('./assistant'))
 
-createRoot(document.getElementById('root')!).render(
-  <Suspense fallback={null}>
-    <Assistant />
-  </Suspense>
+// GitHub redirects back here after sign-in. Finish it before anything renders.
+const finishCallback = async (): Promise<void> => {
+  if (!isGitHubOAuthCallback()) return
+  const returnUrl = await completeGitHubOAuth(assistantOptions).catch(() => null)
+  window.history.replaceState(null, '', returnUrl ?? '/')
+}
+
+// A promise chain, not a top-level await: see host-sign-in.md.
+void finishCallback().finally(() =>
+  createRoot(document.getElementById('root')!).render(
+    <Suspense fallback={null}>
+      <Assistant />
+    </Suspense>
+  )
 )
 ```
 
@@ -272,10 +311,8 @@ createRoot(document.getElementById('root')!).render(
 import {
   BrowserAppShell,
   ChatApp,
-  completeGitHubOAuth,
   createBrowserApp,
   genericToolTreeSummarizer,
-  GITHUB_OAUTH_CALLBACK_PATH,
   loadPlugins,
   resolveBrowserShellBootstrapConfig,
   z,
@@ -283,6 +320,7 @@ import {
 } from '@nntin/tinytinkerer-embed'
 import '@nntin/tinytinkerer-embed/embed.css'
 import '@nntin/tinytinkerer-embed/styles.css'
+import { assistantOptions } from './assistant-options'
 
 const measureBoard = z.object({ board: z.string().describe('The board to measure') })
 
@@ -305,11 +343,9 @@ const tools: AppToolGroup = {
 const config = resolveBrowserShellBootstrapConfig({
   baseUrl: '/',
   origin: window.location.origin,
-  edgeBaseUrl: 'https://api.tiny.nntin.xyz',
-  storageNamespace: 'canfactory',
+  ...assistantOptions,
   authMode: 'oauth',
   githubClientId: '<the OAuth App client id>',
-  githubRedirectUri: `${window.location.origin}${GITHUB_OAUTH_CALLBACK_PATH}`,
   theme: { accent: '#0f766e' }
 })
 
@@ -321,12 +357,6 @@ const app = createBrowserApp(config, {
   documentGlobals: { brandMetadata: false, telemetry: false },
   humanInput: false
 })
-
-// GitHub redirects back here after sign-in. Finish it before the chat mounts.
-if (window.location.pathname === GITHUB_OAUTH_CALLBACK_PATH) {
-  const returnUrl = await completeGitHubOAuth(app)
-  window.history.replaceState(null, '', returnUrl ?? '/')
-}
 
 const Loading = ({ error }: { error?: string }) => (
   <p role="status">{error ? `The assistant could not start: ${error}` : 'Starting…'}</p>
@@ -356,7 +386,9 @@ Create the app **once**, at module scope or in a module-level cache, not in a co
 `packages/app/embed/acceptance/` holds a fresh npm project that has nothing but the `.npmrc` above,
 pinned React and its own build tools. Its run script packs the package, installs it from scratch
 and fails if anything other than the package and React lands in the production dependency tree. It
-then typechecks the host with `skipLibCheck: false` and builds it.
+then typechecks the host with `skipLibCheck: false` and builds it. The host's entry imports the
+`/oauth` subpath eagerly, and the run fails if the built host's gzipped startup JavaScript grows past
+React plus a few kilobytes, which is what a runtime module leaking into it would cost.
 
 The Playwright spec `packages/e2e/tests/embed-package.e2e.ts` serves that build and completes one
 chat turn in which the model calls the host's Zod tool, through the real edge worker. The release

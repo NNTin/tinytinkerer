@@ -11,6 +11,8 @@ export {
   startGitHubOAuth
 } from './auth'
 export { completeGitHubOAuth } from './host-oauth-callback'
+export { isGitHubOAuthCallback } from './oauth'
+export type { GitHubOAuthCallbackConfig } from './oauth'
 export { TINYTINKERER_BRAND_ASSET_URLS } from '@tinytinkerer/brand-assets'
 export { useGitHubUser } from './github-user'
 export type { GitHubUser } from './github-user'

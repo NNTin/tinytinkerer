@@ -49,11 +49,14 @@ export type {
 
 // ── Signing in on the host's origin (#510 T5) ───────────────────────────────
 // `authMode: 'oauth'` makes sign-in required; the host completes GitHub's
-// redirect to GITHUB_OAUTH_CALLBACK_PATH with completeGitHubOAuth. See
+// redirect to GITHUB_OAUTH_CALLBACK_PATH with completeGitHubOAuth. A host that
+// does so from EAGER code imports `@nntin/tinytinkerer-embed/oauth` instead
+// (src/oauth.ts): this entry is not tree-shakeable. See
 // docs/extending/host-sign-in.md.
 export {
   completeGitHubOAuth,
   GITHUB_OAUTH_CALLBACK_PATH,
+  isGitHubOAuthCallback,
   isSignInRequired
 } from '@tinytinkerer/app-browser'
 

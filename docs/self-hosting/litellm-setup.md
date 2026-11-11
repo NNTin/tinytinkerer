@@ -184,7 +184,9 @@ Anonymous users use the same model list as authenticated users
 - `REQUIRE_AUTH_ORIGINS` (var, optional) — comma-separated browser origins that
   get no anonymous path: their token-less models/search/MCP requests are a `401`
   and never use the anonymous key. Their signed-in users share the same per-user
-  key, budget and rate limits as everywhere else on this edge. See
+  key, budget and rate limits as everywhere else on this edge. It keys on the
+  `Origin` header, so it is a browser-origin policy, not access control: a client
+  that sends no `Origin`, or another one, still gets the anonymous key. See
   [Required sign-in per origin](vercel-deployment.md#required-sign-in-per-origin).
 
 The edge validates the base URL strictly: it must be `https://`, with no

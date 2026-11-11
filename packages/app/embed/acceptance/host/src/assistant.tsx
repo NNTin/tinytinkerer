@@ -10,6 +10,7 @@ import {
 } from '@nntin/tinytinkerer-embed'
 import '@nntin/tinytinkerer-embed/embed.css'
 import '@nntin/tinytinkerer-embed/styles.css'
+import { shellOptions } from './shell-options'
 
 declare global {
   interface Window {
@@ -44,9 +45,7 @@ const hostTools: AppToolGroup = {
 const config = resolveBrowserShellBootstrapConfig({
   baseUrl: '/',
   origin: window.location.origin,
-  // Same origin: the acceptance spec answers /api/** with the real edge worker.
-  edgeBaseUrl: window.location.origin,
-  storageNamespace: 'embed-acceptance',
+  ...shellOptions,
   authMode: 'hybrid',
   theme: { accent: '#0f766e' }
 })

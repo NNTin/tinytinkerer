@@ -75,10 +75,16 @@ const importPattern =
 // documentation site decides it in `@theme/Root` on every route — so the rules
 // have to be reachable without the barrel. It imports React and nothing else,
 // which apps/docs/src/docs-runtime/__tests__/static-safety.test.ts certifies.
+// `oauth` is the fourth (issue #518, F3): an embedding host finishes GitHub's
+// redirect from its eager entry, before the runtime chunk exists, so the embed
+// package publishes it as its own `/oauth` subpath. It imports two leaf
+// modules and nothing else, which packages/app/embed/scripts/check-package.mjs
+// certifies on the built chunk graph.
 const ALLOWED_WORKSPACE_FACADES = new Set([
   '@tinytinkerer/app-browser/documentation-corpus',
   '@tinytinkerer/app-browser/assistant-markdown',
-  '@tinytinkerer/app-browser/chat-presentation'
+  '@tinytinkerer/app-browser/chat-presentation',
+  '@tinytinkerer/app-browser/oauth'
 ])
 
 const workspacePackages = await loadWorkspacePackages()
