@@ -207,6 +207,13 @@ describe('host-provided MCP servers', () => {
     expect(requests).toEqual([])
   })
 
+  it('reads as syncing, not signed out, before the first discovery (#518 F5)', async () => {
+    const hostMcp = createHostMcpStore({ config: { edgeBaseUrl: EDGE } } as BrowserShell, [KIPRINT])
+    expect(hostMcpServerStatus(hostMcp.getState(), 'kiprint')).toEqual({ state: 'syncing' })
+    await hostMcp.getState().discover(null)
+    expect(hostMcpServerStatus(hostMcp.getState(), 'kiprint')).toEqual({ state: 'signed-out' })
+  })
+
   it('creates no store for an app that provides no servers', () => {
     const app = createBrowserApp({ storageNamespace: 'plain' }, { plugins: noPlugins })
     expect(app.stores.hostMcp).toBeUndefined()

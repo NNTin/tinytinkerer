@@ -219,6 +219,7 @@ describe('SettingsPanel (B2)', () => {
       { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.test/mcp' }
     ])
     hostMcp.setState({
+      syncing: [],
       discovery: {
         kiprint: {
           serverId: 'kiprint',
@@ -266,6 +267,7 @@ describe('SettingsPanel (B2)', () => {
     const discover = vi.fn(() => Promise.resolve())
     hostMcp.setState({
       discover,
+      syncing: [],
       discovery: {
         kiprint: {
           serverId: 'kiprint',
@@ -291,10 +293,11 @@ describe('SettingsPanel (B2)', () => {
     expect(discover).toHaveBeenCalledWith('gh-token')
   })
 
-  it('tells a signed-out user why a host server has no tools yet', () => {
+  it('tells a signed-out user why a host server has no tools yet', async () => {
     const hostMcp = createHostMcpStore({ config: { edgeBaseUrl: '' } } as BrowserShell, [
       { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.test/mcp' }
     ])
+    await hostMcp.getState().discover(null)
     const app = { stores: { hostMcp } } as unknown as BrowserApp
     render(
       <AppBrowserProvider app={app}>

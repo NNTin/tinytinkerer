@@ -29,7 +29,7 @@ const renderPanel = (discovery: Record<string, McpDiscoveryResult>) => {
     { id: 'parts', name: 'Parts', url: 'https://parts.test/mcp' }
   ])
   const discover = vi.fn(() => Promise.resolve())
-  hostMcp.setState({ discovery, discover })
+  hostMcp.setState({ discovery, discover, syncing: [] })
   const settings = createStore(() => ({
     setPluginToolSelection: vi.fn(),
     setAppToolSelection: vi.fn(),
@@ -70,6 +70,7 @@ describe('tool picker: host-provided MCP servers', () => {
   })
 
   it('says why a server has no tools while signed out', () => {
+    // renderPanel clears `syncing`, as a first discover(null) does.
     renderPanel({})
     expect(screen.getByTestId('tool-tree-host-server-kiprint')).toHaveTextContent(
       'Sign in to load its tools'

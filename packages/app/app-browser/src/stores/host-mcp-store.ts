@@ -35,7 +35,10 @@ export type HostMcpServer = {
 export type HostMcpState = {
   servers: readonly HostMcpServer[]
   discovery: Record<string, McpDiscoveryResult>
-  /** Server ids whose discovery is in flight. */
+  /**
+   * Server ids whose discovery is in flight. Every server starts here, until
+   * the first `discover` call settles it.
+   */
   syncing: readonly string[]
   /**
    * (Re)discovers every server with `token`. Called at boot and whenever the
@@ -134,7 +137,9 @@ export const createHostMcpStore = (
   return createStore<HostMcpState>((set) => ({
     servers,
     discovery: {},
-    syncing: [],
+    // Pending until the first `discover` (at boot) settles it, so a signed-in
+    // user's servers read as syncing, never as signed out, before it runs.
+    syncing: servers.map((server) => server.id),
     discover: async (token) => {
       generation += 1
       const current = generation

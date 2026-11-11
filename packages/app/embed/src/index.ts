@@ -73,7 +73,7 @@ export type { ChatDockEdge, ChatPresentation } from '@tinytinkerer/app-browser/c
 // ── Host-provided MCP servers (#518 F5) ─────────────────────────────────────
 // `createBrowserApp(config, { mcpServers })` provides them; these let a host
 // render their status (`app.stores.hostMcp`) and retry a failed discovery.
-// See docs/extending/host-mcp-servers.md.
+// See docs/extending/embed-package.md#when-a-server-is-down.
 export { hostMcpServerStatus, retryHostMcpDiscovery, useHostMcp } from '@tinytinkerer/app-browser'
 export type { HostMcpServerStatus, HostMcpState, HostMcpStore } from '@tinytinkerer/app-browser'
 

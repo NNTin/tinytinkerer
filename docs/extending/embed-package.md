@@ -201,7 +201,7 @@ again, and the user sees it in two places:
 
 - **Settings → Tools.** The card shows the error and a **Retry** button.
 - **The tool picker.** It lists your servers under "Provided by this app", read-only. A failed one
-  reads "Unavailable: <error>" and has its own **Retry**.
+  reads `Unavailable: <error>` and has its own **Retry**.
 
 Discovery otherwise reruns only when the token changes. So call `retryHostMcpDiscovery(app)` when
 you know the server is back, for example from your own status banner. It resolves when discovery
@@ -232,7 +232,7 @@ is a `HostMcpState`:
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `servers`         | The `HostMcpServer[]` you passed                                                                                               |
 | `discovery`       | The last discovery result per server id: `{ serverId, serverName, tools, syncedAt, error? }`. `error` is set when it failed    |
-| `syncing`         | The ids of servers whose discovery is in flight                                                                                |
+| `syncing`         | The ids of servers whose discovery is in flight. Every server starts here until the first discovery at boot settles it         |
 | `discover(token)` | Rediscovers every server with `token`. Without a token it sends nothing and clears `discovery`. Prefer `retryHostMcpDiscovery` |
 
 Inside `BrowserAppShell`, read it with `useHostMcp(selector)`. Outside React, use
