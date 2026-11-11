@@ -11,13 +11,14 @@ export type {
 } from './dockable-panel-layout'
 
 export { createStageControllerHandle } from './stage-controller'
-export type { StageControllerHandle } from './stage-controller'
+export type { StageControllerHandle, StageControllerMethod } from './stage-controller'
 
 export { createWorkspaceStore } from './workspace-store'
 export type { WorkspaceRecord, WorkspaceStore } from './workspace-store'
 
 export { createStageTools } from './stage-tools'
 export type {
+  CreateControllerStageToolsOptions,
   CreateStageToolsOptions,
   StageToolDefinition,
   StageToolRequestHandle

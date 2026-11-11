@@ -46,6 +46,19 @@ export type AppInstructionBoundary = 'planning' | 'decision' | 'synthesis'
 
 export type AppAssistantPolicy = {
   /**
+   * Replaces the first line of the answer prompt, "You are tinytinkerer, a
+   * warm, practical assistant." (issue #518, F6), e.g. "You are CanFactory's
+   * assistant, …". One line: newlines are collapsed to spaces. Everything after
+   * it (what the UI renders, how to embed media) stays, and `instructions` for
+   * the `synthesis` boundary are still appended after it.
+   *
+   * Only the synthesis prompt carries an identity. The planning and decision
+   * prompts describe a role ("You are a planning assistant…"), not who the
+   * assistant is, so they are unchanged; add to them with `instructions`.
+   */
+  identity?: string
+
+  /**
    * Extra system instructions for one reasoning boundary, appended to that
    * boundary's shared prompt.
    *

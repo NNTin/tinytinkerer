@@ -23,6 +23,7 @@ export {
   createBrowserApp,
   resolveBrowserShellBootstrapConfig,
   DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES,
+  EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES,
   NO_GLOBAL_HOST_CAPABILITIES,
   genericToolTreeSummarizer
 } from '@tinytinkerer/app-browser'
@@ -89,9 +90,12 @@ export type {
   AppToolRunImplementation,
   Tool
 } from '@tinytinkerer/app-browser'
-export { createStageTools } from '@tinytinkerer/app-shell'
+export { createStageControllerHandle, createStageTools } from '@tinytinkerer/app-shell'
 export type {
+  CreateControllerStageToolsOptions,
   CreateStageToolsOptions,
+  StageControllerHandle,
+  StageControllerMethod,
   StageToolDefinition,
   StageToolRequestHandle
 } from '@tinytinkerer/app-shell'

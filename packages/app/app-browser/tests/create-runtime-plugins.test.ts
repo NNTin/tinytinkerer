@@ -536,6 +536,7 @@ describe('plugin runtime contributions', () => {
     // silently — the runtime reports it as a telemetry warning.
     const messageSink = vi.fn()
     setCaptureMessageSink(messageSink)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const runtime = createRuntime({
       baseUrl: 'http://edge.local',
@@ -578,6 +579,9 @@ describe('plugin runtime contributions', () => {
       expect.stringContaining('app tool "shared_id" was dropped'),
       expect.objectContaining({ level: 'warning' })
     )
+    // And on the console, for an embedder that runs no telemetry (#518 F11).
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('app tool "shared_id" was dropped'))
+    warn.mockRestore()
 
     setCaptureMessageSink(null)
     vi.unstubAllGlobals()
