@@ -80,6 +80,10 @@ describe('IDE bundle regression guard', () => {
     // surface; the Settings-only discovery path is loaded lazily to pay for it,
     // leaving 259.994 kB. Effectively no headroom: the next growth here needs a
     // saving or a deliberate raise.
+    // Issue #518 took the saving: vite.config.ts resolves Sandpack's
+    // `intersection-observer` polyfill (a no-op wherever the API is native) to
+    // an empty module, measured 260.05 → 251.1 kB with #518's lazy
+    // ReadOnlyCodeView included. ~9 kB of headroom, budget unchanged.
     expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(260)
     expect((codeMirror?.code?.length ?? 0) / 1024).toBeLessThan(800)
   })

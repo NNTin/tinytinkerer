@@ -17,7 +17,6 @@ import {
   type ReactNode
 } from 'react'
 import { calloutPlugin } from '@tinytinkerer/content-callout'
-import { codePlugin as contentCodePlugin } from '@tinytinkerer/content-code'
 import { imagePlugin } from '@tinytinkerer/content-image'
 import { linkCardPlugin } from '@tinytinkerer/content-link-card'
 import { tablePlugin } from '@tinytinkerer/content-table'
@@ -140,13 +139,12 @@ const codePlugin = createLazyCodeBlockPlugin({
   priority: 30,
   requirements: { clientOnly: true },
   matches: () => true,
-  // content-code is imported statically: unlike the mermaid/wireframe renderers
-  // below, its ReadOnlyCodeView is already pulled into the chat route chunk by
-  // several eager panels (turn activity, context inspector, the permission modal),
-  // so a dynamic import here bought no code-splitting — Rollup flagged it as
-  // INEFFECTIVE_DYNAMIC_IMPORT. We keep the lazy wrapper only for its fallback /
-  // load() lifecycle, resolving the already-bundled plugin synchronously.
-  loadPlugin: () => Promise.resolve(contentCodePlugin)
+  // A real dynamic import, like the mermaid/wireframe renderers below. It used
+  // to be static, because the panels that show a tool's code imported
+  // ReadOnlyCodeView eagerly and a dynamic import here split nothing off. Those
+  // now go through LazyReadOnlyCodeView, so CodeMirror leaves the chat route's
+  // eager graph and is fetched with the first code block (issue #518, F12).
+  loadPlugin: () => import('@tinytinkerer/content-code').then((module) => module.codePlugin)
 })
 
 const mermaidPlugin = createLazyCodeBlockPlugin({

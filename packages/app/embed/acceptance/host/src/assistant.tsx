@@ -47,7 +47,9 @@ const config = resolveBrowserShellBootstrapConfig({
   origin: window.location.origin,
   ...shellOptions,
   authMode: 'hybrid',
-  theme: { accent: '#0f766e' }
+  // The host's own token, followed live. The surface's tokens are `--tt-*`, so
+  // this is a reference to the host's `--accent`, not to itself (issue #518, F1).
+  theme: { accent: 'var(--accent)' }
 })
 
 const app = createBrowserApp(config, {

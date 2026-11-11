@@ -10,7 +10,12 @@
  *    plugin and no content renderer (each sits behind a dynamic `import()` in
  *    the workspace), every catalogue plugin is its own chunk, and the static
  *    graph stays under a byte budget.
- * 3. **The stylesheets exist**, and `embed.css` is still scoped.
+ *    Assets are named relative to the chunk that loads them (issue #518, F2).
+ * 3. **The stylesheets exist and stay off the host page** (issue #518, F1): no
+ *    shipped selector names `:root` or `:host` or could match outside a
+ *    `.tt-app-embed` surface, and every palette token carries the `--tt-`
+ *    prefix — in the stylesheets and in the bundle's own class names and inline
+ *    styles. scripts/host-isolation.mjs is the model.
  * 4. **The `/oauth` subpath is light** (issue #518, F3). A host imports it from
  *    its EAGER entry, so its static graph must stay a few kilobytes: no peer
  *    (React), no chunk the runtime entry also needs beyond the one small chunk
@@ -25,7 +30,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { rollup } from 'rollup'
 import ts from 'typescript'
+import { hostLeakingSelectors, unprefixedTokens } from './host-isolation.mjs'
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const distDir = join(packageDir, 'dist')
@@ -33,10 +40,12 @@ const failures = []
 
 const PEER_SPECIFIER = /^react(-dom)?(\/.*)?$/
 
-// Headroom over the measured entry graph (~2.6 MB unminified; the build log
-// line below prints it). The point is to catch a heavy module — mermaid alone
-// is megabytes — being pulled onto the static path, not to police kilobytes.
-const STATIC_GRAPH_BUDGET_BYTES = 3_000_000
+// Headroom over the measured entry graph (~1.3 MB unminified since CodeMirror
+// went lazy in issue #518, F12 — it was ~2.6 MB; the build log line below
+// prints it). The point is to catch a heavy module — CodeMirror is over a
+// megabyte, mermaid several — being pulled onto the static path, not to police
+// kilobytes.
+const STATIC_GRAPH_BUDGET_BYTES = 1_600_000
 
 // The `/oauth` subpath's whole static graph (~5 KB unminified when written).
 // Anything near this means a runtime module — the telemetry client, Zod, a
@@ -45,17 +54,15 @@ const OAUTH_GRAPH_BUDGET_BYTES = 16_000
 
 // Chunks that must only ever be reached lazily: exactly the code that sits
 // behind a dynamic import() in the workspace itself. Every catalogue plugin and
-// the mermaid and wireframe renderers are named after their package by
+// the code, mermaid and wireframe renderers are named after their package by
 // vite.config.ts; prettier (the code formatter) keeps its own module names.
 //
-// NOT on this list, deliberately: content-code (CodeMirror). It is static in
-// every deployable shell too — the turn-activity panel, context inspector and
-// permission modal all import its ReadOnlyCodeView eagerly (see
-// app-browser/src/assistant-content.tsx) — so a host pays for it when its own
-// import() of this package resolves, exactly as the documentation site's
-// lazily-loaded runtime chunk does.
+// content-code (CodeMirror) joined this list with issue #518, F12: the panels
+// that show a tool's code now reach its ReadOnlyCodeView through
+// app-browser's LazyReadOnlyCodeView, so a host no longer pays for it the
+// moment its own import() of this package resolves.
 const LAZY_ONLY_CHUNK =
-  /^(plugin-[a-z-]+|content-mermaid|content-wireframe|standalone|babel|estree)-[\w-]+\.js$/
+  /^(plugin-[a-z-]+|content-code|content-mermaid|content-wireframe|standalone|babel|estree)-[\w-]+\.js$/
 const CATALOGUE_PLUGINS = [
   'plugin-browser-state',
   'plugin-choice-prompt',
@@ -182,15 +189,79 @@ for (const chunk of Object.keys(graph)) {
   }
 }
 
+// ── 2. relative asset URLs ──────────────────────────────────────────────────
+// An asset named by a root-absolute path ("/assets/x") is a path on the HOST's
+// origin that its bundler never sees, so nothing copies the file there (issue
+// #518, F2). Every reference must be `new URL('../assets/x', import.meta.url)`.
+for (const path of files.filter((file) => /\.(?:js|css)$/.test(file))) {
+  const absolute = readFileSync(path, 'utf8').match(/["'`(]\/assets\/[^"'`)\s]+/g)
+  if (absolute) {
+    failures.push(
+      `${relative(packageDir, path)} names assets by root-absolute URL: ${[...new Set(absolute)].map((url) => url.slice(1)).join(', ')}`
+    )
+  }
+}
+
+// ── 2. no stray annotations ─────────────────────────────────────────────────
+// A comment that mentions `@__PURE__` without being one makes a host's Rollup
+// warn (issue #518, F13); vite.config.ts disarms them. Asked of Rollup itself,
+// bundling the whole package the way a host does, because only a real parser
+// knows a comment from a string that looks like one.
+const rollupWarnings = []
+await (
+  await rollup({
+    input: join(distDir, 'index.js'),
+    external: (id) => PEER_SPECIFIER.test(id),
+    onwarn: (warning) => rollupWarnings.push(warning)
+  })
+).close()
+for (const warning of rollupWarnings.filter(({ code }) => code === 'INVALID_ANNOTATION')) {
+  failures.push(
+    `${relative(packageDir, warning.id ?? '')}:${warning.loc?.line ?? '?'} has a comment a host's Rollup misreads as an annotation`
+  )
+}
+
 // ── 3. stylesheets ──────────────────────────────────────────────────────────
+const stylesheets = files.filter((path) => path.endsWith('.css'))
 for (const name of ['embed.css', 'styles.css']) {
-  if (!files.includes(join(distDir, name))) {
+  if (!stylesheets.includes(join(distDir, name))) {
     failures.push(`dist/${name} was not emitted`)
+  }
+}
+for (const path of stylesheets) {
+  const css = readFileSync(path, 'utf8')
+  const leaks = [...new Set(hostLeakingSelectors(css))]
+  if (leaks.length > 0) {
+    failures.push(
+      `${relative(packageDir, path)} has selectors that reach the host page: ${leaks.join(' | ')}`
+    )
+  }
+  const unprefixed = unprefixedTokens(css)
+  if (unprefixed.length > 0) {
+    failures.push(
+      `${relative(packageDir, path)} names palette tokens without the --tt- prefix: ${unprefixed.join(', ')}`
+    )
   }
 }
 const embedCss = readFileSync(join(distDir, 'embed.css'), 'utf8')
 if (!embedCss.includes(':where(.tt-app-embed)')) {
   failures.push('dist/embed.css is no longer scoped to :where(.tt-app-embed)')
+}
+
+// The bundle's own references to the palette: Tailwind arbitrary values
+// (`bg-[var(--tt-panel)]`, `bg-(--tt-panel)`) and inline-style keys
+// (`'--tt-accent'`). Unprefixed, they would no longer match the stylesheet.
+// Bundled third-party code keeps its own names and spells neither shape.
+const OWN_TOKEN_REFERENCE = /\[var\(--[\w-]+\)|-\(--[\w-]+\)|["'`]--[\w-]+["'`]/g
+for (const chunk of Object.keys(graph)) {
+  const source = readFileSync(join(distDir, chunk), 'utf8')
+  const references = (source.match(OWN_TOKEN_REFERENCE) ?? []).join(' ')
+  const unprefixed = unprefixedTokens(references)
+  if (unprefixed.length > 0) {
+    failures.push(
+      `${chunk} names palette tokens without the --tt- prefix: ${unprefixed.join(', ')}`
+    )
+  }
 }
 
 // ── 4. the /oauth subpath ───────────────────────────────────────────────────
