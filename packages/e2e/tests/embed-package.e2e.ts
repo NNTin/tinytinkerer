@@ -85,6 +85,27 @@ test.describe('embed package acceptance (#510 T1)', () => {
     const surface = page.locator('.tt-app-embed').first()
     await expect(surface.getByPlaceholder('Ask anything')).toBeVisible()
 
+    // Both stylesheets are loaded now, and the host page is untouched (issue
+    // #518, F1): its own `--accent`/`--muted` on :root keep their values, and
+    // its root's color-scheme is still its own. The surface follows the host's
+    // `--accent` through `theme: { accent: 'var(--accent)' }` — no self-cycle.
+    const tokens = await page.evaluate(() => {
+      const root = getComputedStyle(document.documentElement)
+      const stage = document.querySelector('.sidebar-stage')
+      return {
+        accent: root.getPropertyValue('--accent').trim(),
+        muted: root.getPropertyValue('--muted').trim(),
+        colorScheme: root.colorScheme,
+        stageAccent: stage ? getComputedStyle(stage).getPropertyValue('--tt-accent').trim() : null
+      }
+    })
+    expect(tokens).toEqual({
+      accent: '#bd5839',
+      muted: '#4b5563',
+      colorScheme: 'normal',
+      stageAccent: '#bd5839'
+    })
+
     await sendMessage(page, 'How big is the perfboard-70x90?')
 
     // The host's tool ran in the page, with the model's arguments...

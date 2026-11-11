@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Embed acceptance host</title>
+    <!-- The host's own tokens, under the same names the surface once used on
+         :root (issue #518, F1). Loading the package must leave them alone. -->
+    <style>
+      :root {
+        --accent: #bd5839;
+        --muted: #4b5563;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

@@ -21,11 +21,28 @@
  * startup JavaScript — the entry script and every chunk index.html preloads —
  * must stay React plus a few kilobytes. One static import from the package
  * root would add the whole runtime (CanFactory measured +437 KB gz).
+ *
+ * And it asserts the build's assets (issue #518, F2): the host's bundler must
+ * have re-emitted every asset the package ships (mermaid's runtime, the brand
+ * icons), and the built host, served by a plain static server with no SPA
+ * fallback, must answer every `assets/` URL its HTML, scripts and stylesheets
+ * reference. A root-absolute URL baked into the package is exactly what fails
+ * that: the host never copied the file, so the path 404s on its origin.
  */
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 
@@ -75,9 +92,78 @@ const run = (command, commandArgs, cwd, { capture = false } = {}) => {
   return result.stdout
 }
 
+const walk = (dir) =>
+  readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name)
+    return statSync(path).isDirectory() ? walk(path) : [path]
+  })
+
+/**
+ * `mermaid.min-CqoTi1if.js` → `mermaid.min.js`: the name without its content
+ * hash — or hashes, since a host's Vite appends its own to the package's.
+ */
+const unhashed = (fileName) => fileName.replace(/(?:-[\w-]{8})+(\.[^.]+)$/, '$1')
+
+// Vite's default `assetsInlineLimit`: the host may inline an asset this small as
+// a data: URL instead of emitting it, which is fine.
+const HOST_INLINE_LIMIT_BYTES = 4096
+
+/**
+ * Serves `distDir` the way a static host does — a missing file is a 404, never
+ * index.html — and fetches every asset URL its text files reference: any
+ * `assets/<file>` path, taken as the site's `/assets/` (where both a correct
+ * reference and a root-absolute one baked into the package point), and every
+ * `new URL('<file>', import.meta.url)`, resolved against the chunk naming it.
+ * Returns the URLs that did not answer 200.
+ */
+const fetchReferencedAssets = async (distDir) => {
+  const references = new Set()
+  for (const path of walk(distDir).filter((file) => /\.(?:html|js|css)$/.test(file))) {
+    const text = readFileSync(path, 'utf8')
+    for (const [, fileName] of text.matchAll(/(?<![\w-])assets\/([\w.-]+\.[a-z0-9]+)/gi)) {
+      references.add(`/assets/${fileName}`)
+    }
+    const chunkUrl = new URL(relative(distDir, path).split(sep).join('/'), 'http://host/')
+    for (const [, target] of text.matchAll(
+      /new URL\(\s*[`'"]([^`'"]+)[`'"]\s*,\s*import\.meta\.url\s*\)/g
+    )) {
+      if (!/^(?:data|https?|blob):/.test(target)) {
+        references.add(new URL(target, chunkUrl).pathname)
+      }
+    }
+  }
+  const server = createServer((request, response) => {
+    const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://host').pathname)
+    const file = normalize(join(distDir, pathname))
+    const found =
+      (file === distDir || file.startsWith(`${distDir}${sep}`)) &&
+      existsSync(file) &&
+      statSync(file).isFile()
+    response.writeHead(found ? 200 : 404)
+    response.end(found ? readFileSync(file) : 'not found')
+  })
+  await new Promise((done) => server.listen(0, '127.0.0.1', done))
+  const { port } = server.address()
+  try {
+    const failed = []
+    for (const url of [...references].sort()) {
+      const response = await fetch(`http://127.0.0.1:${port}${url}`)
+      await response.arrayBuffer()
+      if (response.status !== 200) {
+        failed.push(`${url} (${response.status})`)
+      }
+    }
+    return { fetched: references.size, failed }
+  } finally {
+    server.close()
+  }
+}
+
 const workDir = mkdtempSync(join(tmpdir(), 'tt-embed-acceptance-'))
 try {
   let packageSpec = registryVersion
+  /** The assets the package ships, by unhashed name; read from the installed copy. */
+  let packageAssets = []
   if (!packageSpec) {
     const stageDir = join(workDir, 'stage')
     run(process.execPath, [join(packageDir, 'scripts/stage-package.mjs'), stageDir], packageDir)
@@ -154,6 +240,35 @@ try {
     )
     process.exit(1)
   }
+
+  // Every asset the package ships must be in the host's output, re-emitted by
+  // the host's own bundler, and every asset URL the host references must load.
+  const installedAssets = join(hostDir, 'node_modules', PACKAGE_NAME, 'dist', 'assets')
+  packageAssets = existsSync(installedAssets)
+    ? readdirSync(installedAssets)
+        .filter((name) => statSync(join(installedAssets, name)).size > HOST_INLINE_LIMIT_BYTES)
+        .map(unhashed)
+    : []
+  const hostAssets = new Set(
+    walk(hostDist).map((path) => unhashed(relative(hostDist, path).split(sep).pop() ?? ''))
+  )
+  const missing = [...new Set(packageAssets)].filter((name) => !hostAssets.has(name))
+  if (missing.length > 0) {
+    console.error(
+      `[acceptance] the host's bundler did not emit these package assets: ${missing.join(', ')}`
+    )
+    process.exit(1)
+  }
+  const { fetched, failed } = await fetchReferencedAssets(hostDist)
+  if (failed.length > 0) {
+    console.error(
+      `[acceptance] the built host references assets it cannot serve:\n  ${failed.join('\n  ')}`
+    )
+    process.exit(1)
+  }
+  console.log(
+    `[acceptance] ${new Set(packageAssets).size} package assets re-emitted; ${fetched} referenced asset URLs all load`
+  )
 
   rmSync(outputDir, { recursive: true, force: true })
   cpSync(join(hostDir, 'dist'), outputDir, { recursive: true })

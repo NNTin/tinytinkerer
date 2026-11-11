@@ -4,7 +4,7 @@ import {
   type PermissionView,
   type PermissionViewSection
 } from '@tinytinkerer/app-core'
-import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
+import { LazyReadOnlyCodeView } from './lazy-read-only-code-view'
 import { useBrowserApp } from './app'
 import { HumanPromptControls } from './human-prompt-controls'
 import { useOwnsHumanPromptHost } from './human-prompt-host-ownership'
@@ -80,7 +80,7 @@ const SectionList = ({ sections }: { sections: PermissionViewSection[] }) => (
     {sections.map((section: PermissionViewSection, index: number) => (
       <Section key={`${section.kind}-${section.label}-${index}`} label={section.label}>
         {section.kind === 'code' ? (
-          <ReadOnlyCodeView
+          <LazyReadOnlyCodeView
             value={section.code}
             language={section.language}
             className="tt-code-editor mt-1 max-h-72 overflow-auto rounded-md border border-stone-200"

@@ -1,6 +1,6 @@
 import type { InspectorResponseView, InspectorView } from '@tinytinkerer/contracts'
 import { useState } from 'react'
-import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
+import { LazyReadOnlyCodeView } from './lazy-read-only-code-view'
 
 // The inspector panel is lazy-loaded by ContextInspectorSlot (see
 // context-inspector.tsx) so its code — and the heavier CodeMirror JSON view it
@@ -274,7 +274,7 @@ export const ContextInspectorPanel = ({
                 {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <ReadOnlyCodeView
+            <LazyReadOnlyCodeView
               value={view.rawJson}
               language="json"
               className="tt-code-editor max-h-72 overflow-auto rounded-lg border border-stone-200"

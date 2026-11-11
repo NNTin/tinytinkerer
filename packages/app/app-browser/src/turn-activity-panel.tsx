@@ -29,7 +29,7 @@ import {
   partitionToolResultMedia,
   type ReActDecisionKind
 } from '@tinytinkerer/contracts'
-import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
+import { LazyReadOnlyCodeView } from './lazy-read-only-code-view'
 import { memo, useEffect, useState } from 'react'
 import { useResolvedPluginView, type PluginViewResolution } from './resolved-plugin-view'
 import { captureTelemetryMessage } from './telemetry/telemetry'
@@ -232,7 +232,7 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
     return (
       <div>
         {section.label ? <span className="text-[var(--muted)]">{section.label}</span> : null}
-        <ReadOnlyCodeView
+        <LazyReadOnlyCodeView
           value={section.code}
           language={section.language}
           className="tt-code-editor mt-1 max-h-72 overflow-auto rounded-md border border-[var(--border)]"

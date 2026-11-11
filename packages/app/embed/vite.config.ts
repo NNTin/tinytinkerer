@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { defineConfig, type Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { namespaceTokens, scopeStylesheet } from './scripts/host-isolation.mjs'
 
 const { version } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8')
@@ -38,15 +39,14 @@ const noServiceWorker = (): Plugin => ({
 // workspace sources get one: assets are emitted as files, referenced through
 // `new URL(..., import.meta.url)` — which the host's bundler re-emits — and
 // fetched only if the code that names them runs.
+const isWorkspaceModule = (id: string): boolean =>
+  !id.includes('node_modules') && /[/\\]packages[/\\]/.test(id) && /\.[cm]?[jt]sx?$/.test(id)
+
 const emitAssetsAsFiles = (): Plugin => ({
   name: 'tinytinkerer-embed:emit-assets-as-files',
   enforce: 'pre',
   transform(code, id) {
-    if (
-      id.includes('node_modules') ||
-      !/[/\\]packages[/\\]/.test(id) ||
-      !/\.[cm]?[jt]sx?$/.test(id)
-    ) {
+    if (!isWorkspaceModule(id)) {
       return undefined
     }
     const rewritten = code
@@ -60,6 +60,32 @@ const emitAssetsAsFiles = (): Plugin => ({
         (_match, quote: string, path: string) => `${quote}${path}?url&no-inline${quote}`
       )
     return rewritten === code ? undefined : { code: rewritten, map: null }
+  }
+})
+
+// Keeps the published stylesheets off the host page (issue #518, F1): the
+// palette tokens become `--tt-*`, and every `:root`/`:host` block moves onto the
+// embed scope. scripts/host-isolation.mjs has the whole model. The workspace's
+// own modules are renamed as they are loaded, so the Tailwind class names they
+// spell (`bg-[var(--panel)]`) match the selectors the stylesheet is renamed to;
+// bundled third-party code is left alone — Sentry's feedback widget, for one,
+// has a `--border` of its own.
+const isolateFromHost = (): Plugin => ({
+  name: 'tinytinkerer-embed:isolate-from-host',
+  enforce: 'pre',
+  transform(code, id) {
+    if (!isWorkspaceModule(id)) {
+      return undefined
+    }
+    const renamed = namespaceTokens(code)
+    return renamed === code ? undefined : { code: renamed, map: null }
+  },
+  generateBundle(_options, bundle) {
+    for (const output of Object.values(bundle)) {
+      if (output.type === 'asset' && output.fileName.endsWith('.css')) {
+        output.source = namespaceTokens(scopeStylesheet(String(output.source)))
+      }
+    }
   }
 })
 
@@ -91,7 +117,14 @@ const recordBundleGraph = (): Plugin => ({
 })
 
 export default defineConfig({
-  plugins: [emitAssetsAsFiles(), react(), tailwindcss(), noServiceWorker(), recordBundleGraph()],
+  plugins: [
+    emitAssetsAsFiles(),
+    isolateFromHost(),
+    react(),
+    tailwindcss(),
+    noServiceWorker(),
+    recordBundleGraph()
+  ],
   define: {
     // Read by app-browser modules this entry does not export
     // (createBrowserShellRoot); defined so a stray reference can never be a
@@ -101,6 +134,14 @@ export default defineConfig({
     // A library build must not inherit Vite's per-app env. The host owns its
     // own mode; nothing bundled here may read the embedder's build env.
     'process.env.NODE_ENV': JSON.stringify('production')
+  },
+  // Asset URLs relative to the chunk that names them (issue #518, F2):
+  // `new URL('../assets/x', import.meta.url)`, which a host's bundler recognises
+  // and re-emits into its own output. The default — root-absolute
+  // `/assets/x` — is a path on the HOST's origin that nothing ever copied there,
+  // so mermaid's runtime and the launcher icon 404ed in every host.
+  experimental: {
+    renderBuiltUrl: () => ({ relative: true })
   },
   build: {
     outDir: 'dist',
