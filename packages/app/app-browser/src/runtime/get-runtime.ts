@@ -9,7 +9,11 @@ import type { AppAssistantPolicy } from '../app-assistant-policy'
 import type { BrowserShell } from '../shell'
 import type { AuthStore } from '../stores/auth-store'
 import type { SettingsStore } from '../stores/settings-store'
-import { hostMcpServerConfig, type HostMcpStore } from '../stores/host-mcp-store'
+import {
+  hostMcpServerConfig,
+  hostMcpUnavailableNote,
+  type HostMcpStore
+} from '../stores/host-mcp-store'
 import { createPluginRuntime, createRuntime } from './create-runtime'
 import type { ForwardedRequestSink } from './edge-fetch'
 
@@ -50,6 +54,7 @@ export const createBrowserRuntimeFactory = (options: {
     create: (context) => {
       const settings = options.settingsStore.getState()
       const host = options.hostMcp?.getState()
+      const hostMcpNote = host ? hostMcpUnavailableNote(host) : undefined
       return createRuntime({
         baseUrl: options.shell.config.edgeBaseUrl,
         getToken: () => options.authStore.getState().token,
@@ -65,6 +70,7 @@ export const createBrowserRuntimeFactory = (options: {
               hostMcpDiscovery: host.discovery
             }
           : {}),
+        ...(hostMcpNote ? { hostMcpNote } : {}),
         pluginActivation: settings.pluginActivation,
         pluginDisabledTools: settings.pluginDisabledTools,
         appToolDisablement: settings.appToolDisablement,

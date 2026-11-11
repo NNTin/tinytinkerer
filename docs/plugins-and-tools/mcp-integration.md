@@ -334,7 +334,12 @@ const app = createBrowserApp(config, {
 - **Discovery:** `initializeBrowserApp` discovers each server at boot with the signed-in user's token. It discovers again whenever the token changes (sign-in, sign-out, account switch). While signed out it sends nothing, because the MCP routes need a signed-in caller.
 - **Registration:** discovered tools register like a user's, as `mcp:<id>:<toolName>`, and run in the same [tool-calling loop](#4--the-tool-calling-loop). Host servers are registered before the user's own, so on an id clash the app's server wins.
 - **Storage:** the servers and their discovery results live in memory (`app.stores.hostMcp`). They are never written to the user's preferences.
-- **Settings:** Settings lists host servers above the user's own, marked "Provided by this app", with their sync status and nothing to toggle, edit or remove.
+- **Settings:** Settings lists host servers above the user's own, marked "Provided by this app", with their sync status and nothing to toggle, edit or remove. A server whose discovery failed shows its error and a **Retry** button.
+- **Tool picker:** the picker lists host servers read-only under "Provided by this app". A failed one reads "Unavailable", with its error and a **Retry**.
+- **Recovery:** `retryHostMcpDiscovery(app)` reruns discovery with the current token. Without it, a server that comes back up returns only on the next token change or reload.
+- **`required`:** while a server marked `required: true` has no tools (failed, syncing or signed out), every system prompt in the turn ends with a one-line note naming it as unavailable. The model then tells the user instead of claiming to use its tools.
+
+See [Embedding TinyTinkerer](../extending/embed-package.md#when-a-server-is-down) for the status API (`useHostMcp`, `hostMcpServerStatus`).
 
 ### On the edge
 

@@ -1,5 +1,6 @@
 import type { ToolTreePluginNode, ToolTreeView } from '@tinytinkerer/contracts'
-import { useSettingsStore } from './app'
+import { retryHostMcpDiscovery, useHostMcp, useOptionalBrowserApp, useSettingsStore } from './app'
+import { hostMcpServerStatus, type HostMcpServerStatus } from './stores/host-mcp-store'
 
 // The tool-tree panel is lazy-loaded by ToolTreeSlot (see tool-tree.tsx) so its
 // code stays OUT of the eagerly-loaded chat route chunk and only loads when a user
@@ -32,6 +33,70 @@ const IndeterminateCheckbox = ({
     className="h-4 w-4 shrink-0 accent-[var(--accent)]"
   />
 )
+
+const hostServerStatusText = (status: HostMcpServerStatus): string => {
+  switch (status.state) {
+    case 'syncing':
+      return 'Connecting…'
+    case 'signed-out':
+      return 'Sign in to load its tools'
+    case 'available':
+      return `${status.toolCount} tool${status.toolCount !== 1 ? 's' : ''}, always on`
+    case 'unavailable':
+      return `Unavailable: ${status.error}`
+  }
+}
+
+// The app's own MCP servers (issue #518, F5). Their tools cannot be toggled —
+// the app provides them to every user — but they are listed so a server that is
+// down reads as "unavailable" rather than silently missing from the picker.
+const HostMcpServerRows = () => {
+  const servers = useHostMcp((state) => state.servers)
+  const discovery = useHostMcp((state) => state.discovery)
+  const syncing = useHostMcp((state) => state.syncing)
+  const app = useOptionalBrowserApp()
+  if (servers.length === 0) return null
+  return (
+    <div className="space-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2">
+      <p className="text-sm font-medium text-[var(--text-strong)]">Provided by this app</p>
+      <ul className="space-y-1">
+        {servers.map((server) => {
+          const status = hostMcpServerStatus({ discovery, syncing }, server.id)
+          const unavailable = status.state === 'unavailable'
+          return (
+            <li
+              key={server.id}
+              data-testid={`tool-tree-host-server-${server.id}`}
+              data-status={status.state}
+              className="flex items-start justify-between gap-2 px-1 py-0.5"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-xs text-[var(--text-strong)]">
+                  {server.name}
+                </span>
+                <span
+                  className={`block whitespace-normal break-words text-xs ${unavailable ? 'text-rose-600' : 'text-[var(--muted)]'}`}
+                >
+                  {hostServerStatusText(status)}
+                </span>
+              </span>
+              {unavailable && app ? (
+                <button
+                  type="button"
+                  onClick={() => void retryHostMcpDiscovery(app)}
+                  aria-label={`Retry ${server.name}`}
+                  className="shrink-0 rounded px-2 py-0.5 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]"
+                >
+                  Retry
+                </button>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
 
 export type ToolTreePanelProps = {
   view: ToolTreeView
@@ -193,6 +258,7 @@ export const ToolTreePanel = ({
               </div>
             ))
           )}
+          <HostMcpServerRows />
         </div>
       </div>
     </div>

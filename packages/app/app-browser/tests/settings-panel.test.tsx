@@ -219,6 +219,7 @@ describe('SettingsPanel (B2)', () => {
       { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.test/mcp' }
     ])
     hostMcp.setState({
+      syncing: [],
       discovery: {
         kiprint: {
           serverId: 'kiprint',
@@ -259,10 +260,44 @@ describe('SettingsPanel (B2)', () => {
     }
   })
 
-  it('tells a signed-out user why a host server has no tools yet', () => {
+  it('offers Retry on a host server whose discovery failed (issue #518, F5)', () => {
     const hostMcp = createHostMcpStore({ config: { edgeBaseUrl: '' } } as BrowserShell, [
       { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.test/mcp' }
     ])
+    const discover = vi.fn(() => Promise.resolve())
+    hostMcp.setState({
+      discover,
+      syncing: [],
+      discovery: {
+        kiprint: {
+          serverId: 'kiprint',
+          serverName: 'KiPrint',
+          syncedAt: '2026-11-10T00:00:00.000Z',
+          tools: [],
+          error: 'HTTP 502'
+        }
+      }
+    })
+    const auth = { getState: () => ({ token: 'gh-token' }) }
+    const app = { stores: { hostMcp, auth } } as unknown as BrowserApp
+    render(
+      <AppBrowserProvider app={app}>
+        <SettingsPanel open onOpenChange={vi.fn()} />
+      </AppBrowserProvider>
+    )
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }))
+
+    const card = screen.getByTestId('host-mcp-server')
+    expect(card).toHaveTextContent('HTTP 502')
+    fireEvent.click(within(card).getByRole('button', { name: 'Retry KiPrint' }))
+    expect(discover).toHaveBeenCalledWith('gh-token')
+  })
+
+  it('tells a signed-out user why a host server has no tools yet', async () => {
+    const hostMcp = createHostMcpStore({ config: { edgeBaseUrl: '' } } as BrowserShell, [
+      { id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.test/mcp' }
+    ])
+    await hostMcp.getState().discover(null)
     const app = { stores: { hostMcp } } as unknown as BrowserApp
     render(
       <AppBrowserProvider app={app}>

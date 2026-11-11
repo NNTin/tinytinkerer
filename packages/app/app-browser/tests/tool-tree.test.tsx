@@ -6,6 +6,7 @@ import type { PluginModule, ToolTreeInput, ToolTreeView } from '@tinytinkerer/co
 import { applyAppToolSelection, applyPluginToolSelection } from '@tinytinkerer/app-core'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
+import type { HostMcpState } from '../src/stores/host-mcp-store.js'
 
 // A real mapper stands in for the tool-tree plugin's summarizeToolTree so the
 // panel renders realistic content without importing the concrete plugin package
@@ -200,7 +201,13 @@ vi.mock('../src/app.js', () => ({
   // varies between cases.
   // Stable reference, like the real `app.loadPlugins` — see
   // context-gauge.test.tsx for why a fresh function per render loops.
-  useBrowserApp: () => fakeBrowserApp
+  useBrowserApp: () => fakeBrowserApp,
+  // No host-provided MCP servers here; tool-tree-host-mcp.test.tsx covers them.
+  useHostMcp: <T,>(
+    selector: (state: Pick<HostMcpState, 'servers' | 'discovery' | 'syncing'>) => T
+  ): T => selector({ servers: [], discovery: {}, syncing: [] }),
+  useOptionalBrowserApp: () => fakeBrowserApp,
+  retryHostMcpDiscovery: () => Promise.resolve()
 }))
 
 import { ToolTreeSlot, useToolTree } from '../src/tool-tree.js'
