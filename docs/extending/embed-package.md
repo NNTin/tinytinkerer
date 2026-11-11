@@ -112,17 +112,17 @@ telemetry. It is safe to import from your eager entry. It exports `GITHUB_OAUTH_
 `resolveBrowserShellBootstrapConfig(options)` returns the `BrowserShellConfig` that both
 `createBrowserApp` and `BrowserAppShell` take.
 
-| Option              | Meaning                                                                                                                                                                                                                      |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `baseUrl`, `origin` | Required. Your app's base path and `window.location.origin`                                                                                                                                                                  |
-| `edgeBaseUrl`       | The TinyTinkerer edge, e.g. `https://api.tiny.nntin.xyz`. The edge must list your origin in `ALLOWED_ORIGINS`                                                                                                                |
-| `storageNamespace`  | The IndexedDB database this app owns: conversations, settings, model choice. Use your own, e.g. `'canfactory'`. Never `'tinytinkerer'`, the product's own namespace, or two apps on one origin will share histories          |
-| `authMode`          | `'oauth'` (the app runs GitHub sign-in itself), `'host-token'` (the host supplies a token in `hostToken` and the app never starts OAuth), or `'hybrid'` (the default: OAuth, or the shared anonymous quota while signed out) |
-| `githubClientId`    | The GitHub OAuth App's client id, for `'oauth'` and `'hybrid'`                                                                                                                                                               |
-| `githubRedirectUri` | Where GitHub sends the user back: `${window.location.origin}${GITHUB_OAUTH_CALLBACK_PATH}` on an embedding host. Defaults to the hash route `<baseUrl>#/auth/callback` on your origin when only a client id is given         |
-| `theme`             | Optional colours mapped onto the shell's tokens, so the surface blends into your page: `{ background, panel, text, border, accent }`. Every field is optional; an omitted one keeps the shell's own value                    |
-| `hostToken`         | A GitHub token the host already holds, for `'host-token'`. Kept in memory only                                                                                                                                               |
-| `sentryDsn`, …      | Optional TinyTinkerer telemetry settings. Leave them unset unless you run the shell's telemetry                                                                                                                              |
+| Option              | Meaning                                                                                                                                                                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseUrl`, `origin` | Required. Your app's base path and `window.location.origin`                                                                                                                                                                                                                      |
+| `edgeBaseUrl`       | The TinyTinkerer edge, e.g. `https://api.tiny.nntin.xyz`. The edge must list your origin in `ALLOWED_ORIGINS`                                                                                                                                                                    |
+| `storageNamespace`  | The IndexedDB database this app owns: conversations, settings, model choice. Use your own, e.g. `'canfactory'`. Never `'tinytinkerer'`, the product's own namespace, or two apps on one origin will share histories                                                              |
+| `authMode`          | `'oauth'` (the app runs GitHub sign-in itself), `'host-token'` (the host supplies a token in `hostToken` and the app never starts OAuth), or `'hybrid'` (the default: OAuth, or the shared anonymous quota while signed out)                                                     |
+| `githubClientId`    | The GitHub OAuth App's client id, for `'oauth'` and `'hybrid'`                                                                                                                                                                                                                   |
+| `githubRedirectUri` | Where GitHub sends the user back: `${window.location.origin}${GITHUB_OAUTH_CALLBACK_PATH}` on an embedding host. Defaults to the hash route `<baseUrl>#/auth/callback` on your origin when only a client id is given                                                             |
+| `theme`             | Optional colours mapped onto the shell's tokens, so the surface blends into your page: `{ background, panel, text, border, accent }`. Every field is optional; an omitted one keeps the shell's own value. A value may be `var(--your-token)`; see [Theme tokens](#theme-tokens) |
+| `hostToken`         | A GitHub token the host already holds, for `'host-token'`. Kept in memory only                                                                                                                                                                                                   |
+| `sentryDsn`, …      | Optional TinyTinkerer telemetry settings. Leave them unset unless you run the shell's telemetry                                                                                                                                                                                  |
 
 ## `createBrowserApp(config, options)`
 
@@ -258,8 +258,42 @@ Load both stylesheets, and put the class `tt-app-embed` on the element that wrap
   utilities the components use, already compiled. Your app needs no Tailwind for them. If it does
   use Tailwind, it doesn't need to scan this package. The sheet has no global reset.
 
+Neither sheet touches your page. Neither has a `:root` or `:host` selector, and the package build
+fails if one appears. The design tokens, the Tailwind theme and `color-scheme: light` are declared
+on the outermost `.tt-app-embed` element, at zero specificity, so any rule of yours wins.
+
 `ChatApp`'s own stage element carries `tt-app-embed` too, so the docked and floating layouts are
 covered even when they render outside your wrapper.
+
+### Theme tokens
+
+The surface's colour tokens are namespaced `--tt-*`, so they never collide with your own
+variables:
+
+- the bases: `--tt-bg`, `--tt-panel`, `--tt-text`, `--tt-muted`, `--tt-border`, `--tt-accent`,
+  `--tt-link` and `--tt-accent-strong`;
+- the values derived from them, such as `--tt-accent-ring` and `--tt-panel-hover`, which follow
+  the bases automatically.
+
+Your page's `--accent` stays yours. Because of the prefix, a `theme` value can reference one of
+your variables. The surface then follows your theme live, including a dark-mode switch:
+
+```ts
+resolveBrowserShellBootstrapConfig({
+  // ...
+  theme: { accent: 'var(--accent)', panel: 'var(--surface)' }
+})
+```
+
+`theme` sets the five bases it names. To set the others, such as `--tt-muted` or `--tt-link`, or to
+change `color-scheme`, declare them on your wrapper: `.my-assistant.tt-app-embed { --tt-muted: …;
+color-scheme: dark; }`.
+
+### Assets
+
+The package references its files (mermaid's runtime, the brand icons) with
+`new URL('../assets/…', import.meta.url)`. Vite, Rollup and webpack recognise that pattern and
+copy the files into your build output, so you don't copy anything by hand.
 
 ## Loading it lazily
 

@@ -89,6 +89,31 @@ const isolateFromHost = (): Plugin => ({
   }
 })
 
+// A host's Rollup reads `@__PURE__` anywhere in a comment as an annotation, so a
+// comment that merely MENTIONS one is an annotation in the wrong place, and the
+// host's build warns "contains an annotation that Rollup cannot interpret"
+// (issue #518, F13). The one shipped is Zod's own JSDoc on its `anchor()`
+// helper, so the rewrite runs on every module's source, dependencies included.
+// A comment that is exactly an annotation is left alone; in any other
+// comment the marker loses its sigil, which is all Rollup keys on. Only block
+// comments that open a line are rewritten: a bundled parser's string literals
+// are full of `/*`, and a line-leading doc comment is never one of them.
+// scripts/check-package.mjs bundles the output with Rollup and fails the build
+// if the warning comes back.
+const disarmAnnotationProse = (): Plugin => ({
+  name: 'tinytinkerer-embed:disarm-annotation-prose',
+  transform(code, id) {
+    if (!/\.[cm]?[jt]sx?$/.test(id) || !/[#@]__(?:PURE|NO_SIDE_EFFECTS)__/.test(code)) {
+      return null
+    }
+    const disarmed = code.replace(
+      /^[ \t]*\/\*(?![#@]__[A-Z_]+__\s*\*\/)[\s\S]*?\*\//gm,
+      (comment) => comment.replace(/[#@](__(?:PURE|NO_SIDE_EFFECTS)__)/g, '$1')
+    )
+    return disarmed === code ? null : { code: disarmed, map: null }
+  }
+})
+
 // Records the bundler's own chunk graph — every chunk's static imports,
 // dynamic imports and size — for scripts/check-package.mjs. Asking the bundler
 // rather than re-parsing its output is the point: bundled parsers (prettier,
@@ -120,6 +145,7 @@ export default defineConfig({
   plugins: [
     emitAssetsAsFiles(),
     isolateFromHost(),
+    disarmAnnotationProse(),
     react(),
     tailwindcss(),
     noServiceWorker(),

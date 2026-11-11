@@ -247,7 +247,9 @@ describe('HumanPromptHost', () => {
     // The summarizer's output, not the raw JSON fallback: it split the
     // statements onto their own lines.
     await waitFor(() => expect(dialog).toHaveTextContent('const a=1;'))
-    expect(dialog.querySelector('.cm-editor')).toBeInTheDocument()
+    // CodeMirror is lazy (issue #518, F12): the plain-text fallback renders
+    // first and the editor replaces it once content-code has loaded.
+    await waitFor(() => expect(dialog.querySelector('.cm-editor')).toBeInTheDocument())
     expect(dialog).toHaveTextContent('Code')
     expect(dialog).not.toHaveTextContent('"code"')
 

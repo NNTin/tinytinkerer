@@ -30,6 +30,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { rollup } from 'rollup'
 import ts from 'typescript'
 import { hostLeakingSelectors, unprefixedTokens } from './host-isolation.mjs'
 
@@ -199,6 +200,25 @@ for (const path of files.filter((file) => /\.(?:js|css)$/.test(file))) {
       `${relative(packageDir, path)} names assets by root-absolute URL: ${[...new Set(absolute)].map((url) => url.slice(1)).join(', ')}`
     )
   }
+}
+
+// ── 2. no stray annotations ─────────────────────────────────────────────────
+// A comment that mentions `@__PURE__` without being one makes a host's Rollup
+// warn (issue #518, F13); vite.config.ts disarms them. Asked of Rollup itself,
+// bundling the whole package the way a host does, because only a real parser
+// knows a comment from a string that looks like one.
+const rollupWarnings = []
+await (
+  await rollup({
+    input: join(distDir, 'index.js'),
+    external: (id) => PEER_SPECIFIER.test(id),
+    onwarn: (warning) => rollupWarnings.push(warning)
+  })
+).close()
+for (const warning of rollupWarnings.filter(({ code }) => code === 'INVALID_ANNOTATION')) {
+  failures.push(
+    `${relative(packageDir, warning.id ?? '')}:${warning.loc?.line ?? '?'} has a comment a host's Rollup misreads as an annotation`
+  )
 }
 
 // ── 3. stylesheets ──────────────────────────────────────────────────────────
