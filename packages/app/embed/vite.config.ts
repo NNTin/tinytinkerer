@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { defineConfig, type Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { disarmAnnotationProse } from './scripts/annotation-prose.mjs'
 import { namespaceTokens, scopeStylesheet } from './scripts/host-isolation.mjs'
 
 const { version } = JSON.parse(
@@ -89,27 +90,18 @@ const isolateFromHost = (): Plugin => ({
   }
 })
 
-// A host's Rollup reads `@__PURE__` anywhere in a comment as an annotation, so a
-// comment that merely MENTIONS one is an annotation in the wrong place, and the
-// host's build warns "contains an annotation that Rollup cannot interpret"
-// (issue #518, F13). The one shipped is Zod's own JSDoc on its `anchor()`
-// helper, so the rewrite runs on every module's source, dependencies included.
-// A comment that is exactly an annotation is left alone; in any other
-// comment the marker loses its sigil, which is all Rollup keys on. Only block
-// comments that open a line are rewritten: a bundled parser's string literals
-// are full of `/*`, and a line-leading doc comment is never one of them.
+// Comments that merely mention `@__PURE__` make a host's Rollup warn (issue
+// #518, F13); scripts/annotation-prose.mjs has the model. It runs on every
+// module's source, dependencies included, because the one shipped is Zod's.
 // scripts/check-package.mjs bundles the output with Rollup and fails the build
 // if the warning comes back.
-const disarmAnnotationProse = (): Plugin => ({
+const disarmAnnotations = (): Plugin => ({
   name: 'tinytinkerer-embed:disarm-annotation-prose',
   transform(code, id) {
-    if (!/\.[cm]?[jt]sx?$/.test(id) || !/[#@]__(?:PURE|NO_SIDE_EFFECTS)__/.test(code)) {
+    if (!/\.[cm]?[jt]sx?$/.test(id)) {
       return null
     }
-    const disarmed = code.replace(
-      /^[ \t]*\/\*(?![#@]__[A-Z_]+__\s*\*\/)[\s\S]*?\*\//gm,
-      (comment) => comment.replace(/[#@](__(?:PURE|NO_SIDE_EFFECTS)__)/g, '$1')
-    )
+    const disarmed = disarmAnnotationProse(code)
     return disarmed === code ? null : { code: disarmed, map: null }
   }
 })
@@ -145,7 +137,7 @@ export default defineConfig({
   plugins: [
     emitAssetsAsFiles(),
     isolateFromHost(),
-    disarmAnnotationProse(),
+    disarmAnnotations(),
     react(),
     tailwindcss(),
     noServiceWorker(),
@@ -214,6 +206,6 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts']
+    include: ['tests/**/*.test.ts', 'scripts/**/*.test.mjs']
   }
 })
