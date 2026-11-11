@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 // only what the entry SAYS it exports.
 
 const entryPath = fileURLToPath(new URL('../src/index.ts', import.meta.url))
+const oauthEntryPath = fileURLToPath(new URL('../src/oauth.ts', import.meta.url))
 
 const exportsOf = (path: string): { values: string[]; types: string[] } => {
   const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest)
@@ -48,6 +49,7 @@ describe('@nntin/tinytinkerer-embed public entry', () => {
       'createBrowserApp',
       'createStageTools',
       'genericToolTreeSummarizer',
+      'isGitHubOAuthCallback',
       'isSignInRequired',
       'loadPlugins',
       'resolveBrowserShellBootstrapConfig',
@@ -102,6 +104,47 @@ describe('@nntin/tinytinkerer-embed public entry', () => {
       fileURLToPath(new URL('../../../../docs/extending/embed-package.md', import.meta.url)),
       'utf8'
     )
+    const undocumented = [...surface.values, ...surface.types].filter(
+      (name) => !docs.includes(`\`${name}\``)
+    )
+    expect(undocumented).toEqual([])
+  })
+})
+
+describe('@nntin/tinytinkerer-embed/oauth subpath (#518 F3)', () => {
+  const surface = exportsOf(oauthEntryPath)
+
+  it('exports exactly the callback helpers', () => {
+    expect(surface.values).toEqual([
+      'GITHUB_OAUTH_CALLBACK_PATH',
+      'completeGitHubOAuth',
+      'isGitHubOAuthCallback'
+    ])
+    expect(surface.types).toEqual(['GitHubOAuthCallbackConfig'])
+  })
+
+  it('re-exports only from the side-effect-free app-browser facade', () => {
+    const source = ts.createSourceFile(
+      oauthEntryPath,
+      readFileSync(oauthEntryPath, 'utf8'),
+      ts.ScriptTarget.Latest
+    )
+    const specifiers = source.statements.flatMap((statement) =>
+      (ts.isExportDeclaration(statement) || ts.isImportDeclaration(statement)) &&
+      statement.moduleSpecifier &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+        ? [statement.moduleSpecifier.text]
+        : []
+    )
+    expect([...new Set(specifiers)]).toEqual(['@tinytinkerer/app-browser/oauth'])
+  })
+
+  it('is documented in docs/extending/host-sign-in.md', () => {
+    const docs = readFileSync(
+      fileURLToPath(new URL('../../../../docs/extending/host-sign-in.md', import.meta.url)),
+      'utf8'
+    )
+    expect(docs).toContain('@nntin/tinytinkerer-embed/oauth')
     const undocumented = [...surface.values, ...surface.types].filter(
       (name) => !docs.includes(`\`${name}\``)
     )

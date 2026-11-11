@@ -2,27 +2,17 @@
 // lands in a shell's chat route chunk: only a host that imports it pays for it.
 import type { BrowserApp } from './app'
 import { completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl } from './auth'
+import { toSameOriginReturnUrl } from './oauth'
 import { readOAuthCallbackParamsFrom } from './oauth-callback-url'
 import { markOAuthCallbackHandled } from './telemetry/oauth-callback-handled'
 
-// Only a same-origin return URL can be restored with `history.replaceState`
-// (which throws on a cross-origin URL), and only one is safe to hand a host to
-// navigate to. Anything else — a malformed value, or an embedded flow that
-// started on another origin's top-level page — is dropped.
-const toSameOriginReturnUrl = (returnUrl: string | null): string | null => {
-  if (!returnUrl) return null
-  try {
-    return new URL(returnUrl, window.location.href).origin === window.location.origin
-      ? returnUrl
-      : null
-  } catch {
-    return null
-  }
-}
-
 /**
  * Finish a GitHub sign-in on an embedding host's own callback page (issue #510
- * T5). Call it on load when `location.pathname === GITHUB_OAUTH_CALLBACK_PATH`.
+ * T5). Call it on load when `isGitHubOAuthCallback()` (or
+ * `location.pathname === GITHUB_OAUTH_CALLBACK_PATH`). A host that has no app
+ * yet — its eager entry, before the runtime chunk — uses the light
+ * `completeGitHubOAuth(config, url)` from the `/oauth` subpath (./oauth.ts)
+ * instead.
  *
  * Reads `code` and `state` from `url` (default: the current location; both the
  * plain-query and hash-routed callback shapes are understood), checks `state`

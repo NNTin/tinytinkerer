@@ -9,28 +9,20 @@ import {
   tryParseJsonWithTelemetry,
   type RequestTelemetryMetadata
 } from './telemetry/request-telemetry'
+import {
+  consumeOAuthReturnUrl,
+  consumeOAuthState,
+  oauthReturnUrlStorageKey,
+  oauthStateStorageKey
+} from './oauth'
 
-const oauthStateKey = (shell: BrowserShell): string =>
-  `${shell.config.storageNamespace}:oauth_state`
-const oauthReturnUrlKey = (shell: BrowserShell): string =>
-  `${shell.config.storageNamespace}:oauth_return_url`
+export { GITHUB_OAUTH_CALLBACK_PATH } from './oauth'
 
 const generateState = (): string => {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
 }
-
-/**
- * The non-hash callback path an embedding host registers as its
- * `githubRedirectUri` (issue #510 T5), e.g.
- * `https://canfactory.nntin.xyz/auth/github/callback`. It sits outside `/api/`
- * and needs no client-side router: on load the host checks
- * `location.pathname === GITHUB_OAUTH_CALLBACK_PATH` and calls
- * `completeGitHubOAuth` (host-oauth-callback.ts). tinytinkerer's own shells keep their hash-routed
- * `…/#/auth/callback`.
- */
-export const GITHUB_OAUTH_CALLBACK_PATH = '/auth/github/callback'
 
 /**
  * Whether this shell can run its own GitHub OAuth. Needs a client id AND a
@@ -61,7 +53,7 @@ const createGitHubLoginUrl = (shell: BrowserShell): string => {
 
   const config = shell.config
   const state = generateState()
-  sessionStorage.setItem(oauthStateKey(shell), state)
+  sessionStorage.setItem(oauthStateStorageKey(shell.config.storageNamespace), state)
   const params = new URLSearchParams({
     client_id: config.githubClientId!,
     scope: 'read:user',
@@ -114,25 +106,17 @@ export const startGitHubOAuth = (shell: BrowserShell): void => {
   // document. Consumed once, on success, by completeGitHubOAuthCallback's caller.
   const returnUrl = isEmbeddedContext() ? getTopLevelHref() : window.location.href
   if (returnUrl) {
-    sessionStorage.setItem(oauthReturnUrlKey(shell), returnUrl)
+    sessionStorage.setItem(oauthReturnUrlStorageKey(shell.config.storageNamespace), returnUrl)
   }
 
   navigateForOAuth(createGitHubLoginUrl(shell))
 }
 
-const validateOAuthState = (shell: BrowserShell, returnedState: string | null): boolean => {
-  const stateKey = oauthStateKey(shell)
-  const storedState = sessionStorage.getItem(stateKey)
-  sessionStorage.removeItem(stateKey)
-  return Boolean(storedState) && storedState === returnedState
-}
+const validateOAuthState = (shell: BrowserShell, returnedState: string | null): boolean =>
+  consumeOAuthState(shell.config.storageNamespace, returnedState)
 
-export const consumeGitHubOAuthReturnUrl = (shell: BrowserShell): string | null => {
-  const key = oauthReturnUrlKey(shell)
-  const returnUrl = sessionStorage.getItem(key)
-  sessionStorage.removeItem(key)
-  return returnUrl
-}
+export const consumeGitHubOAuthReturnUrl = (shell: BrowserShell): string | null =>
+  consumeOAuthReturnUrl(shell.config.storageNamespace)
 
 const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> => {
   const config = shell.config

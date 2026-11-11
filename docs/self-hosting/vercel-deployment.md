@@ -239,9 +239,13 @@ Origins not listed, and requests without an `Origin` header, keep the anonymous 
 origin in both variables: `ALLOWED_ORIGINS` lets the browser read the response, including the
 `401`, and `REQUIRE_AUTH_ORIGINS` removes the anonymous fallback.
 
-This is a browser-origin policy, not an authentication boundary. A non-browser client can omit or
-forge `Origin`. It keeps an embedding host that must not offer anonymous use (CanFactory) from
-silently falling back to it.
+**This is a browser-origin policy, not edge access control.** The edge decides by the request's
+`Origin` header, and only a browser is bound to send the page's real origin. A non-browser client
+that sends no `Origin`, or a foreign one, still gets the anonymous path: `GET /api/models/list` with
+`Origin: https://evil.example` returns the model list. What the variable guarantees is narrower: a
+page served from a listed origin never falls back to the anonymous key, so an embedding host that
+must not offer anonymous use (CanFactory) can't do so by accident. It does not keep anyone off the
+anonymous key: what bounds anonymous use is that key's own LiteLLM budget and rate limits.
 
 **Budgets are shared.** A signed-in reader on a `REQUIRE_AUTH_ORIGINS` host gets the same
 per-GitHub-user LiteLLM key, budget (`LITELLM_USER_MAX_BUDGET_USD` per

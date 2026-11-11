@@ -29,6 +29,10 @@
       "types": "./src/chat-presentation.ts",
       "default": "./src/chat-presentation.ts"
     },
+    "./oauth": {
+      "types": "./src/oauth.ts",
+      "default": "./src/oauth.ts"
+    },
     "./styles.css": "./src/styles.css",
     "./embed.css": "./src/embed.css",
     "./launcher.css": "./src/launcher.css",

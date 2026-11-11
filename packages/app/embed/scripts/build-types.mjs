@@ -10,9 +10,10 @@
  *
  * So this script:
  *
- * 1. runs the TypeScript compiler over `src/index.ts` with declaration emit,
+ * 1. runs the TypeScript compiler over the entries (`src/index.ts`, and the
+ *    `/oauth` subpath's `src/oauth.ts`) with declaration emit,
  *    capturing every emitted `.d.ts` in memory;
- * 2. walks the import closure from the entry's declaration — ONLY files the
+ * 2. walks the import closure from the entries' declarations — ONLY files the
  *    public types actually reach are published;
  * 3. resolves each specifier exactly as the compiler did, then
  *    - a workspace module maps to its own emitted declaration,
@@ -31,7 +32,11 @@ import ts from 'typescript'
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = resolve(packageDir, '../../..')
 const typesDir = join(packageDir, 'dist/types')
-const entry = join(packageDir, 'src/index.ts')
+/** Each published entry point: its source, and the `dist/` declaration that fronts it. */
+const entries = [
+  { source: join(packageDir, 'src/index.ts'), facade: join(packageDir, 'dist/index.d.ts') },
+  { source: join(packageDir, 'src/oauth.ts'), facade: join(packageDir, 'dist/oauth.d.ts') }
+]
 // Ambient build-time constants the bundled sources read; never published.
 const ambient = join(packageDir, 'src/env.d.ts')
 
@@ -100,7 +105,10 @@ const compilerOptions = {
 }
 const emitRoot = compilerOptions.outDir
 
-const program = ts.createProgram({ rootNames: [entry, ambient], options: compilerOptions })
+const program = ts.createProgram({
+  rootNames: [...entries.map(({ source }) => source), ambient],
+  options: compilerOptions
+})
 const emitted = new Map()
 const emitResult = program.emit(undefined, (fileName, text) => {
   emitted.set(resolve(fileName), text)
@@ -242,7 +250,7 @@ const moduleSpecifiersOf = (fileName, text) => {
   return found
 }
 
-const queue = [place(entry)]
+const queue = entries.map(({ source }) => place(source))
 while (queue.length > 0) {
   const file = queue.shift()
   if (files.has(file.key)) {
@@ -306,11 +314,10 @@ for (const { out, text } of files.values()) {
   }
 }
 
-const entryOut = files.get(resolve(entry)).out
-writeFileSync(
-  join(packageDir, 'dist/index.d.ts'),
-  `export * from '${relativeSpecifier(join(packageDir, 'dist/index.d.ts'), entryOut)}'\n`
-)
+for (const { source, facade } of entries) {
+  const entryOut = files.get(resolve(source)).out
+  writeFileSync(facade, `export * from '${relativeSpecifier(facade, entryOut)}'\n`)
+}
 
 console.log(
   `[embed] wrote ${files.size} declaration files` +

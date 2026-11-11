@@ -115,6 +115,10 @@ export default defineConfig({
     lib: {
       entry: {
         index: 'src/index.ts',
+        // The side-effect-free `/oauth` subpath (issue #518, F3). Modules it
+        // shares with `index` land in one small shared chunk; check-package.mjs
+        // asserts nothing else is on its static graph.
+        oauth: 'src/oauth.ts',
         embed: 'src/embed.css',
         styles: 'src/styles.css'
       },

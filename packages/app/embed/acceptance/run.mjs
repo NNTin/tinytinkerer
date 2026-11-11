@@ -15,12 +15,19 @@
  * It also asserts the install itself: the host's production dependency tree
  * must be the package, React, and React's own runtime dependency — nothing
  * else the package might have leaked.
+ *
+ * And it measures what the host pays at startup (issue #518, F3): the host's
+ * entry imports `@nntin/tinytinkerer-embed/oauth` EAGERLY, so the gzipped
+ * startup JavaScript — the entry script and every chunk index.html preloads —
+ * must stay React plus a few kilobytes. One static import from the package
+ * root would add the whole runtime (CanFactory measured +437 KB gz).
  */
 import { spawnSync } from 'node:child_process'
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { gzipSync } from 'node:zlib'
 
 const acceptanceDir = dirname(fileURLToPath(import.meta.url))
 const packageDir = resolve(acceptanceDir, '..')
@@ -29,6 +36,15 @@ const PACKAGE_NAME = '@nntin/tinytinkerer-embed'
 
 /** The host's whole production tree. `scheduler` is react-dom's own dependency. */
 const ALLOWED_PRODUCTION_PACKAGES = new Set([PACKAGE_NAME, 'react', 'react-dom', 'scheduler'])
+
+// The host's gzipped startup JavaScript, measured when written: 62.0 KB, almost
+// all of it React and react-dom (pinned in host/package.json, so it is stable);
+// the `/oauth` subpath is ~1 KB of it. How much a root import adds depends on
+// the host's bundler and on WHICH export: CanFactory (Rollup) measured +437 KB
+// for one constant, and here (Vite 8 / Rolldown, which splits the package's
+// chunks finer) importing `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES` from the root
+// measured 73.9 KB. The budget sits between baseline and that smallest leak.
+const STARTUP_GZIP_BUDGET_BYTES = 66_000
 
 const args = process.argv.slice(2)
 const registryIndex = args.indexOf('--from-registry')
@@ -110,6 +126,34 @@ try {
 
   run(npm, ['run', 'typecheck'], hostDir)
   run(npm, ['run', 'build'], hostDir)
+
+  // What the built host loads before any import() runs: the entry script and
+  // every chunk index.html preloads with it.
+  const hostDist = join(hostDir, 'dist')
+  const indexHtml = readFileSync(join(hostDist, 'index.html'), 'utf8')
+  const startupScripts = [
+    ...indexHtml.matchAll(/<script type="module"[^>]*\ssrc="([^"]+)"/g),
+    ...indexHtml.matchAll(/<link rel="modulepreload"[^>]*\shref="([^"]+)"/g)
+  ].map((match) => match[1])
+  if (startupScripts.length === 0) {
+    console.error('[acceptance] found no entry script in the built index.html')
+    process.exit(1)
+  }
+  const startupGzipBytes = startupScripts.reduce(
+    (sum, src) => sum + gzipSync(readFileSync(join(hostDist, src))).length,
+    0
+  )
+  console.log(
+    `[acceptance] host startup JavaScript (${startupScripts.join(', ')}): ` +
+      `${(startupGzipBytes / 1000).toFixed(1)} kB gzip`
+  )
+  if (startupGzipBytes > STARTUP_GZIP_BUDGET_BYTES) {
+    console.error(
+      `[acceptance] the host's startup JavaScript is ${startupGzipBytes} bytes gzipped, over the ` +
+        `${STARTUP_GZIP_BUDGET_BYTES}-byte budget: the eager \`/oauth\` import pulled in the runtime`
+    )
+    process.exit(1)
+  }
 
   rmSync(outputDir, { recursive: true, force: true })
   cpSync(join(hostDir, 'dist'), outputDir, { recursive: true })
