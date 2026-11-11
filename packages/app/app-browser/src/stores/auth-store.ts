@@ -37,13 +37,20 @@ export const createAuthStore = (shell: BrowserShell): AuthStore =>
       const { loadAuthState, persistToken } = await loadCoreModule()
       // A sign-in the host completed before this app existed, with the light
       // completeGitHubOAuth from the `/oauth` subpath (issue #518, F3). Moved
-      // into this app's own token storage, then deleted; left in place if the
-      // write fails, so the next boot tries again.
+      // into this app's own token storage, then deleted. Best-effort: boot
+      // must never depend on a write, so a failed one (a quota error, an
+      // aborted transaction) boots signed out and leaves the key in place for
+      // the next boot to retry.
       const pendingKey = oauthPendingTokenStorageKey(shell.config.storageNamespace)
       const pendingToken = readPendingToken(pendingKey)
       if (pendingToken) {
-        await persistToken(shell.authTokens, pendingToken)
-        localStorage.removeItem(pendingKey)
+        const persisted = await persistToken(shell.authTokens, pendingToken).then(
+          () => true,
+          () => false
+        )
+        if (persisted) {
+          removePendingToken(pendingKey)
+        }
       }
       const state = await loadAuthState(shell.authTokens)
       set({ token: state.token })

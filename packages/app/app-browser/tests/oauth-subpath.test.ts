@@ -220,6 +220,18 @@ describe('the next app boot', () => {
     expect(localStorage.getItem('canfactory:oauth_pending_token')).toBeNull()
   })
 
+  it('still boots, signed out, when the handoff write fails, and keeps the key for a retry', async () => {
+    localStorage.setItem('canfactory:oauth_pending_token', 'ghu_light_token')
+    const { shell } = memoryShell('canfactory')
+    shell.authTokens.setStoredToken = () => Promise.reject(new Error('QuotaExceededError'))
+    const store = createAuthStore(shell)
+
+    await expect(store.getState().initialize()).resolves.toBeUndefined()
+
+    expect(store.getState().token).toBeNull()
+    expect(localStorage.getItem('canfactory:oauth_pending_token')).toBe('ghu_light_token')
+  })
+
   it('ignores another namespace’s pending token', async () => {
     localStorage.setItem('other:oauth_pending_token', 'ghu_other')
     const { shell } = memoryShell('canfactory')
