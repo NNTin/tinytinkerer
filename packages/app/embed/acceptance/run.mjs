@@ -16,11 +16,13 @@
  * must be the package, React, and React's own runtime dependency — nothing
  * else the package might have leaked.
  *
- * And it measures what the host pays at startup (issue #518, F3): the host's
- * entry imports `@nntin/tinytinkerer-embed/oauth` EAGERLY, so the gzipped
- * startup JavaScript — the entry script and every chunk index.html preloads —
- * must stay React plus a few kilobytes. One static import from the package
- * root would add the whole runtime (CanFactory measured +437 KB gz).
+ * And it measures what the host pays at startup (issue #518 F3, #523 G1): the
+ * host's entry imports `@nntin/tinytinkerer-embed/oauth` EAGERLY, and so does
+ * its "editor" `@nntin/tinytinkerer-embed/stage`, installing a stage controller
+ * the lazy assistant's tool then calls. The gzipped startup JavaScript — the
+ * entry script and every chunk index.html preloads — must stay React plus a
+ * few kilobytes. A static import of the runtime would add far more (CanFactory
+ * measured +437 KB gz for one root constant before #523 G2).
  *
  * And it asserts the build's assets (issue #518, F2): the host's bundler must
  * have re-emitted every asset the package ships (mermaid's runtime, the brand
@@ -56,11 +58,15 @@ const ALLOWED_PRODUCTION_PACKAGES = new Set([PACKAGE_NAME, 'react', 'react-dom',
 
 // The host's gzipped startup JavaScript, measured when written: 62.0 KB, almost
 // all of it React and react-dom (pinned in host/package.json, so it is stable);
-// the `/oauth` subpath is ~1 KB of it. How much a root import adds depends on
-// the host's bundler and on WHICH export: CanFactory (Rollup) measured +437 KB
-// for one constant, and here (Vite 8 / Rolldown, which splits the package's
-// chunks finer) importing `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES` from the root
-// measured 73.9 KB. The budget sits between baseline and that smallest leak.
+// the `/oauth` subpath is ~1 KB of it and the `/stage` subpath (issue #523, G1)
+// well under 1 KB. How much a root import adds depends on the host's bundler
+// and on WHICH export: CanFactory (Rollup) measured +437 KB for one constant,
+// and here (Vite 8 / Rolldown, which splits the package's chunks finer)
+// importing `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES` from the root measured
+// 73.9 KB. Since #523 G2 the root's light exports sit in chunks of their own and
+// cost little even from the root, but anything of the runtime — `createBrowserApp`
+// alone is ~13 KB gz, `ChatApp` ~100 KB — still lands far over this budget,
+// which sits a few kilobytes above the baseline.
 const STARTUP_GZIP_BUDGET_BYTES = 66_000
 
 const args = process.argv.slice(2)
@@ -236,7 +242,7 @@ try {
   if (startupGzipBytes > STARTUP_GZIP_BUDGET_BYTES) {
     console.error(
       `[acceptance] the host's startup JavaScript is ${startupGzipBytes} bytes gzipped, over the ` +
-        `${STARTUP_GZIP_BUDGET_BYTES}-byte budget: the eager \`/oauth\` import pulled in the runtime`
+        `${STARTUP_GZIP_BUDGET_BYTES}-byte budget: the eager \`/oauth\` or \`/stage\` import pulled in the runtime`
     )
     process.exit(1)
   }

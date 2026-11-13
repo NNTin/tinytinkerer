@@ -11,6 +11,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./stage": {
+      "types": "./src/stage.ts",
+      "default": "./src/stage.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "main": "src/index.ts",

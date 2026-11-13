@@ -80,11 +80,16 @@ const importPattern =
 // package publishes it as its own `/oauth` subpath. It imports two leaf
 // modules and nothing else, which packages/app/embed/scripts/check-package.mjs
 // certifies on the built chunk graph.
+// `app-shell/stage` is the fifth (issue #523, G1): a host's eager editor module
+// installs its stage controller on a handle at startup, so the embed package
+// publishes the stage helpers as its own `/stage` subpath. Both modules behind
+// it import only types; check-package.mjs certifies that too.
 const ALLOWED_WORKSPACE_FACADES = new Set([
   '@tinytinkerer/app-browser/documentation-corpus',
   '@tinytinkerer/app-browser/assistant-markdown',
   '@tinytinkerer/app-browser/chat-presentation',
-  '@tinytinkerer/app-browser/oauth'
+  '@tinytinkerer/app-browser/oauth',
+  '@tinytinkerer/app-shell/stage'
 ])
 
 const workspacePackages = await loadWorkspacePackages()

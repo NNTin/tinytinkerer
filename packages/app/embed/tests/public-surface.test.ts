@@ -15,6 +15,22 @@ import { describe, expect, it } from 'vitest'
 
 const entryPath = fileURLToPath(new URL('../src/index.ts', import.meta.url))
 const oauthEntryPath = fileURLToPath(new URL('../src/oauth.ts', import.meta.url))
+const stageEntryPath = fileURLToPath(new URL('../src/stage.ts', import.meta.url))
+
+const specifiersOf = (path: string): string[] => {
+  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest)
+  return [
+    ...new Set(
+      source.statements.flatMap((statement) =>
+        (ts.isExportDeclaration(statement) || ts.isImportDeclaration(statement)) &&
+        statement.moduleSpecifier &&
+        ts.isStringLiteral(statement.moduleSpecifier)
+          ? [statement.moduleSpecifier.text]
+          : []
+      )
+    )
+  ]
+}
 
 const exportsOf = (path: string): { values: string[]; types: string[] } => {
   const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest)
@@ -135,19 +151,7 @@ describe('@nntin/tinytinkerer-embed/oauth subpath (#518 F3)', () => {
   })
 
   it('re-exports only from the side-effect-free app-browser facade', () => {
-    const source = ts.createSourceFile(
-      oauthEntryPath,
-      readFileSync(oauthEntryPath, 'utf8'),
-      ts.ScriptTarget.Latest
-    )
-    const specifiers = source.statements.flatMap((statement) =>
-      (ts.isExportDeclaration(statement) || ts.isImportDeclaration(statement)) &&
-      statement.moduleSpecifier &&
-      ts.isStringLiteral(statement.moduleSpecifier)
-        ? [statement.moduleSpecifier.text]
-        : []
-    )
-    expect([...new Set(specifiers)]).toEqual(['@tinytinkerer/app-browser/oauth'])
+    expect(specifiersOf(oauthEntryPath)).toEqual(['@tinytinkerer/app-browser/oauth'])
   })
 
   it('is documented in docs/extending/host-sign-in.md', () => {
@@ -160,5 +164,39 @@ describe('@nntin/tinytinkerer-embed/oauth subpath (#518 F3)', () => {
       (name) => !docs.includes(`\`${name}\``)
     )
     expect(undocumented).toEqual([])
+  })
+})
+
+describe('@nntin/tinytinkerer-embed/stage subpath (#523 G1)', () => {
+  const surface = exportsOf(stageEntryPath)
+  const root = exportsOf(entryPath)
+
+  it('exports exactly the stage helpers', () => {
+    expect(surface.values).toEqual(['createStageControllerHandle', 'createStageTools'])
+    expect(surface.types).toEqual([
+      'CreateControllerStageToolsOptions',
+      'CreateStageToolsOptions',
+      'StageControllerHandle',
+      'StageControllerMethod',
+      'StageToolDefinition',
+      'StageToolRequestHandle'
+    ])
+  })
+
+  it('is a subset of the root, which still exports every name', () => {
+    expect(surface.values.filter((name) => !root.values.includes(name))).toEqual([])
+    expect(surface.types.filter((name) => !root.types.includes(name))).toEqual([])
+  })
+
+  it('re-exports only from the side-effect-free app-shell facade', () => {
+    expect(specifiersOf(stageEntryPath)).toEqual(['@tinytinkerer/app-shell/stage'])
+  })
+
+  it('is documented in docs/extending/embed-package.md', () => {
+    const docs = readFileSync(
+      fileURLToPath(new URL('../../../../docs/extending/embed-package.md', import.meta.url)),
+      'utf8'
+    )
+    expect(docs).toContain('@nntin/tinytinkerer-embed/stage')
   })
 })
