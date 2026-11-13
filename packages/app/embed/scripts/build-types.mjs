@@ -10,8 +10,9 @@
  *
  * So this script:
  *
- * 1. runs the TypeScript compiler over the entries (`src/index.ts`, and the
- *    `/oauth` subpath's `src/oauth.ts`) with declaration emit,
+ * 1. runs the TypeScript compiler over the entries (`src/index.ts`, the
+ *    `/oauth` subpath's `src/oauth.ts` and the `/stage` subpath's
+ *    `src/stage.ts`) with declaration emit,
  *    capturing every emitted `.d.ts` in memory;
  * 2. walks the import closure from the entries' declarations — ONLY files the
  *    public types actually reach are published;
@@ -35,7 +36,8 @@ const typesDir = join(packageDir, 'dist/types')
 /** Each published entry point: its source, and the `dist/` declaration that fronts it. */
 const entries = [
   { source: join(packageDir, 'src/index.ts'), facade: join(packageDir, 'dist/index.d.ts') },
-  { source: join(packageDir, 'src/oauth.ts'), facade: join(packageDir, 'dist/oauth.d.ts') }
+  { source: join(packageDir, 'src/oauth.ts'), facade: join(packageDir, 'dist/oauth.d.ts') },
+  { source: join(packageDir, 'src/stage.ts'), facade: join(packageDir, 'dist/stage.d.ts') }
 ]
 // Ambient build-time constants the bundled sources read; never published.
 const ambient = join(packageDir, 'src/env.d.ts')

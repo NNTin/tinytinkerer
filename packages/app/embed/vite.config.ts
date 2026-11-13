@@ -178,6 +178,9 @@ export default defineConfig({
         // shares with `index` land in one small shared chunk; check-package.mjs
         // asserts nothing else is on its static graph.
         oauth: 'src/oauth.ts',
+        // The side-effect-free `/stage` subpath (issue #523, G1), held to the
+        // same check: nothing on its static graph but the two stage helpers.
+        stage: 'src/stage.ts',
         embed: 'src/embed.css',
         styles: 'src/styles.css'
       },
@@ -187,6 +190,36 @@ export default defineConfig({
       external: (id) => PEER.test(id),
       output: {
         entryFileNames: '[name].js',
+        // Root exports that live in a chunk of their own cost a host only that
+        // chunk (issue #523, G2). `index.js` is the runtime's own chunk, and its
+        // top-level statements (React `lazy()`s, stores, renderer plugins) are
+        // calls a host's bundler must keep, so an export DEFINED there pulls
+        // in ~88 KB gz of runtime with it. An export the entry merely
+        // re-exports from another chunk does not: the package marks its
+        // JavaScript side-effect free, so a host that uses nothing defined in
+        // `index.js` drops it. These groups move the light modules hosts use
+        // out of it — the plugin catalogue's names and loader, the generic
+        // tool-tree summarizer, and Zod (`z`), which would otherwise share a
+        // chunk with every schema `@tinytinkerer/contracts` builds at load.
+        // A group takes its modules' dependencies with it unless an earlier
+        // group already claimed them (library mode forbids opting out), so
+        // contracts has a group of its own ahead of the catalogue's, which
+        // imports one function from it. docs/extending/embed-package.md has
+        // the measured costs.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'zod',
+              test: /[/\\]node_modules[/\\](?:\.pnpm[/\\][^/\\]+[/\\]node_modules[/\\])?zod[/\\]/
+            },
+            { name: 'contracts', test: /[/\\]packages[/\\]shared[/\\]contracts[/\\]src[/\\]/ },
+            { name: 'catalogue', test: /[/\\]packages[/\\]app[/\\]catalogue[/\\]src[/\\]/ },
+            {
+              name: 'tool-tree-summarizer',
+              test: /[/\\]app-browser[/\\]src[/\\]generic-tool-tree-summarizer\.ts$/
+            }
+          ]
+        },
         // A chunk whose entry module belongs to a plugin or a content renderer
         // is named after that package, so scripts/check-package.mjs can assert
         // by NAME that none of them is on the entry's static import graph.

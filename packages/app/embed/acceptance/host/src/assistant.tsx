@@ -10,6 +10,7 @@ import {
 } from '@nntin/tinytinkerer-embed'
 import '@nntin/tinytinkerer-embed/embed.css'
 import '@nntin/tinytinkerer-embed/styles.css'
+import { boardStage } from './board-stage'
 import { shellOptions } from './shell-options'
 
 declare global {
@@ -23,7 +24,9 @@ const measureBoardInput = z.object({
   board: z.string().describe('The prototype board to measure, e.g. "perfboard-70x90".')
 })
 
-// The host's own tools: one group, one Zod-schema tool.
+// The host's own tools: one group, one Zod-schema tool. It answers through the
+// stage handle the host's eager code installed its controller on (issue #523,
+// G1), so the acceptance spec proves that path end to end.
 const hostTools: AppToolGroup = {
   id: 'host',
   label: 'Host',
@@ -33,8 +36,7 @@ const hostTools: AppToolGroup = {
       description: 'Return the width and height, in millimetres, of a named prototype board.',
       schema: measureBoardInput,
       execute: async (input) => {
-        const { board } = measureBoardInput.parse(input)
-        const result = { board, widthMm: 70, heightMm: 90 }
+        const result = await boardStage.request('measure', measureBoardInput.parse(input))
         window.__embedToolCalls = [...(window.__embedToolCalls ?? []), result]
         return result
       }

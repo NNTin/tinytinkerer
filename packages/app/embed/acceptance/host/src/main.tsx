@@ -1,14 +1,19 @@
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
-// The ONLY package import on the startup path: the side-effect-free `/oauth`
-// subpath. Importing anything from the package root here would put the whole
-// runtime in this chunk; run.mjs measures that it does not.
+// The ONLY package imports on the startup path: the side-effect-free `/oauth`
+// subpath here and the `/stage` subpath in ./board-stage. Importing anything
+// from the package root here would put the whole runtime in this chunk; run.mjs
+// measures that it does not.
 import { completeGitHubOAuth, isGitHubOAuthCallback } from '@nntin/tinytinkerer-embed/oauth'
+import { installBoardController } from './board-stage'
 import { shellOptions } from './shell-options'
 
 // The host's own page renders first; the assistant — and with it the package's
 // runtime — is fetched only through this dynamic import().
 const Assistant = lazy(() => import('./assistant'))
+
+// The host's editor mounts its stage controller at startup (issue #523, G1).
+installBoardController()
 
 const container = document.getElementById('root')
 if (!container) {

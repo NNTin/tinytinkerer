@@ -62,13 +62,14 @@ release.
 
 ## What the package exports
 
-All exports below come from the package root, `@nntin/tinytinkerer-embed`. The one exception is the
-[`/oauth` subpath](#the-oauth-subpath).
+All exports below come from the package root, `@nntin/tinytinkerer-embed`. Two side-effect-free
+subpaths, [`/oauth`](#the-oauth-subpath) and [`/stage`](#the-stage-subpath), carry the few values
+a host needs before the assistant loads.
 
-**Never import the package root from eager code.** The root is not tree-shakeable: one static import
-from it, even of a string constant, can put the whole runtime in your startup bundle. Import it only
-from the module you load lazily ([Loading it lazily](#loading-it-lazily)). Code that must run before
-that, such as finishing GitHub's sign-in redirect, imports `@nntin/tinytinkerer-embed/oauth`.
+**Import the package root only from code you load lazily** ([Loading it lazily](#loading-it-lazily)).
+Code on your startup path, such as finishing GitHub's sign-in redirect or installing a stage
+controller when your editor mounts, imports a subpath instead. See
+[Eager code and lazy code](#eager-code-and-lazy-code) for what each entry costs.
 
 | Export                                  | What it is                                                                                             |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -104,6 +105,48 @@ Types: `AppTool`, `AppToolGroup`, `AppToolRunBindings`, `AppToolRunImplementatio
 Two subpath exports carry the stylesheets: `@nntin/tinytinkerer-embed/embed.css` and
 `@nntin/tinytinkerer-embed/styles.css`.
 
+### Eager code and lazy code
+
+| Where the import is                                      | Import from                                                          |
+| -------------------------------------------------------- | -------------------------------------------------------------------- |
+| Your startup path: the entry, your router, eager editors | `@nntin/tinytinkerer-embed/oauth`, `@nntin/tinytinkerer-embed/stage` |
+| The module you load with `import()` or `React.lazy`      | `@nntin/tinytinkerer-embed`                                          |
+
+The root bundles the runtime as a few large chunks. The chunk that defines `ChatApp` and the
+shell runs React `lazy()` calls, store setup and renderer registration when it loads. A host's
+bundler has to keep that code, so any export defined in that chunk brings the runtime with it.
+Root exports that live in a chunk of their own are cheap, because the package marks its
+JavaScript side-effect free and your bundler can drop every chunk you don't use. Since issue #523 the
+light helpers (`createStageControllerHandle`, `createStageTools`, `CATALOGUE_PLUGIN_NAMES`,
+`genericToolTreeSummarizer`, the callback constants) and Zod each have their own chunk.
+
+What one import adds to a host build, measured with a minifying Vite 8 build, gzipped, with
+React excluded:
+
+| Import                                                                                                | Adds (gzip) |
+| ----------------------------------------------------------------------------------------------------- | ----------- |
+| `@nntin/tinytinkerer-embed/stage` (both helpers)                                                      | 0.4 kB      |
+| `@nntin/tinytinkerer-embed/oauth` (all three exports)                                                 | 0.9 kB      |
+| `createStageControllerHandle` or `createStageTools` from the root                                     | 0.2 kB      |
+| `CATALOGUE_PLUGIN_NAMES` or `genericToolTreeSummarizer` from the root                                 | 0.3–1.2 kB  |
+| `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES` (or the other two) from the root                               | 4.1 kB      |
+| `createBrowserApp` from the root                                                                      | 13.2 kB     |
+| `loadPlugins` from the root                                                                           | 39.2 kB     |
+| `z` from the root (the whole Zod namespace)                                                           | 90.2 kB     |
+| `ChatApp` from the root                                                                               | 103.6 kB    |
+| `BrowserAppShell`, `ChatApp`, `createBrowserApp`, `loadPlugins`, `resolveBrowserShellBootstrapConfig` | 132.8 kB    |
+| The same plus `z`                                                                                     | 187.7 kB    |
+| Every root export                                                                                     | 189.0 kB    |
+
+Before these chunks were split out, any single value from the root cost at least 88 kB, `z` alone
+cost 149 kB and every export cost 195 kB. The runtime itself (about 133 kB for a working chat)
+is what the assistant needs to run. Plugins, renderers, dialogs and CodeMirror stay in further
+chunks behind their own `import()`s and are not counted above.
+
+Don't treat a cheap root import as a licence to import the root eagerly. Which exports share a
+chunk is a build detail, and it can change between releases; the subpaths are the contract. Your
+bundler also has to honour `sideEffects`, as Vite, Rollup, Rolldown, webpack and esbuild do.
+
 ### The `/oauth` subpath
 
 `@nntin/tinytinkerer-embed/oauth` is side-effect free and imports nothing: no React, no stores, no
@@ -111,6 +154,36 @@ telemetry. It is safe to import from your eager entry. It exports `GITHUB_OAUTH_
 `isGitHubOAuthCallback(url?)` and a light `completeGitHubOAuth(config, url?)` that needs no
 `BrowserApp`: it saves the token, and the next app boot picks it up. See
 [Completing the callback](./host-sign-in.md#completing-the-callback).
+
+### The `/stage` subpath
+
+`@nntin/tinytinkerer-embed/stage` is side-effect free and imports nothing: no React, no Zod, no
+stores. It exports `createStageControllerHandle` and `createStageTools`, with the types
+`StageControllerHandle`, `StageControllerMethod`, `StageToolDefinition`, `StageToolRequestHandle`,
+`CreateStageToolsOptions` and `CreateControllerStageToolsOptions`. They are the same functions the
+root exports, so a handle created here works with tools built from the root.
+
+Create the handle in a module both halves share. Your eager editor installs the controller on it
+when it mounts, and the lazy assistant's tools call it:
+
+```ts title="src/board-stage.ts"
+import { createStageControllerHandle } from '@nntin/tinytinkerer-embed/stage'
+
+type BoardController = { measure(input: unknown): { widthMm: number; heightMm: number } }
+
+export const boardStage = createStageControllerHandle<BoardController>(
+  'The board editor is not mounted.'
+)
+```
+
+```ts title="src/editor.ts (eager)"
+import { boardStage } from './board-stage'
+
+boardStage.setController({ measure: () => ({ widthMm: 70, heightMm: 90 }) })
+```
+
+Until a controller is installed, `boardStage.request(...)` rejects with the message you passed,
+and the model reads it as the tool's error.
 
 ## Configuration
 
@@ -640,8 +713,10 @@ Create the app **once**, at module scope or in a module-level cache, not in a co
 pinned React and its own build tools. Its run script packs the package, installs it from scratch
 and fails if anything other than the package and React lands in the production dependency tree. It
 then typechecks the host with `skipLibCheck: false` and builds it. The host's entry imports the
-`/oauth` subpath eagerly, and the run fails if the built host's gzipped startup JavaScript grows past
-React plus a few kilobytes, which is what a runtime module leaking into it would cost.
+`/oauth` subpath eagerly and installs a stage controller from the `/stage` subpath at startup; its
+tool answers through that handle. The run fails if the built host's gzipped startup JavaScript
+grows past React plus a few kilobytes, which is what a runtime module leaking into it would cost.
+The package build also fails if either subpath's own chunk graph grows past a few kilobytes.
 
 The Playwright spec `packages/e2e/tests/embed-package.e2e.ts` serves that build and completes one
 chat turn in which the model calls the host's Zod tool, through the real edge worker. The release

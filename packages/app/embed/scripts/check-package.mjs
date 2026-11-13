@@ -16,10 +16,10 @@
  *    `.tt-app-embed` surface, and every palette token carries the `--tt-`
  *    prefix — in the stylesheets and in the bundle's own class names and inline
  *    styles. scripts/host-isolation.mjs is the model.
- * 4. **The `/oauth` subpath is light** (issue #518, F3). A host imports it from
- *    its EAGER entry, so its static graph must stay a few kilobytes: no peer
- *    (React), no chunk the runtime entry also needs beyond the one small chunk
- *    the two share.
+ * 4. **The `/oauth` and `/stage` subpaths are light** (issue #518 F3, #523
+ *    G1). A host imports them from its EAGER code, so each static graph must
+ *    stay a few kilobytes: no peer (React), no dynamic import, no chunk the
+ *    runtime entry also needs beyond the small leaf chunks they share.
  *
  * The JavaScript checks read the chunk graph the bundler itself recorded
  * (`.build/bundle-graph.json`, written by vite.config.ts) rather than
@@ -47,10 +47,14 @@ const PEER_SPECIFIER = /^react(-dom)?(\/.*)?$/
 // kilobytes.
 const STATIC_GRAPH_BUDGET_BYTES = 1_600_000
 
-// The `/oauth` subpath's whole static graph (~5 KB unminified when written).
-// Anything near this means a runtime module — the telemetry client, Zod, a
-// store — leaked into what a host pays at startup.
-const OAUTH_GRAPH_BUDGET_BYTES = 16_000
+// The side-effect-free subpaths a host imports from EAGER code, and each one's
+// whole static graph budget. `/oauth` measured ~8.6 KB unminified, `/stage`
+// ~2 KB. Anything near a budget means a runtime module — the telemetry client,
+// Zod, a store — leaked into what a host pays at startup.
+const LIGHT_SUBPATHS = [
+  { name: 'oauth', issue: '#518 F3', budget: 16_000 },
+  { name: 'stage', issue: '#523 G1', budget: 8_000 }
+]
 
 // Chunks that must only ever be reached lazily: exactly the code that sits
 // behind a dynamic import() in the workspace itself. Every catalogue plugin and
@@ -264,35 +268,43 @@ for (const chunk of Object.keys(graph)) {
   }
 }
 
-// ── 4. the /oauth subpath ───────────────────────────────────────────────────
-if (!('oauth.js' in graph)) {
-  failures.push('dist/oauth.js was not emitted (the `/oauth` subpath, issue #518 F3)')
-} else {
-  const oauth = staticClosure('oauth.js')
-  const oauthBytes = [...oauth.chunks].reduce((sum, chunk) => sum + graph[chunk].bytes, 0)
-  if (oauth.bare.size > 0) {
+// ── 4. the light subpaths ───────────────────────────────────────────────────
+// `/oauth` (issue #518, F3) and `/stage` (issue #523, G1). A host imports them
+// from its EAGER code, so each one's static graph must stay a few kilobytes: no
+// peer (React), no dynamic import, nothing the runtime entry also needs beyond
+// the small leaf modules the two share.
+for (const { name, issue, budget } of LIGHT_SUBPATHS) {
+  const entry = `${name}.js`
+  if (!(entry in graph)) {
+    failures.push(`dist/${entry} was not emitted (the \`/${name}\` subpath, issue ${issue})`)
+    continue
+  }
+  const closure = staticClosure(entry)
+  const bytes = [...closure.chunks].reduce((sum, chunk) => sum + graph[chunk].bytes, 0)
+  if (closure.bare.size > 0) {
     failures.push(
-      `the /oauth subpath imports ${[...oauth.bare].join(', ')}; it must import nothing a host resolves`
+      `the /${name} subpath imports ${[...closure.bare].join(', ')}; it must import nothing a host resolves`
     )
   }
-  if (oauthBytes > OAUTH_GRAPH_BUDGET_BYTES) {
+  if (bytes > budget) {
     failures.push(
-      `the /oauth subpath's static graph is ${oauthBytes} bytes over ${oauth.chunks.size} chunks, ` +
-        `over the ${OAUTH_GRAPH_BUDGET_BYTES}-byte budget; a runtime module leaked into it`
+      `the /${name} subpath's static graph is ${bytes} bytes over ${closure.chunks.size} chunks, ` +
+        `over the ${budget}-byte budget; a runtime module leaked into it`
     )
   }
-  if (graph['oauth.js'].dynamicImports.length > 0) {
+  const dynamicImports = [...closure.chunks].flatMap((chunk) => graph[chunk].dynamicImports)
+  if (dynamicImports.length > 0) {
     failures.push(
-      `the /oauth subpath has dynamic imports (${graph['oauth.js'].dynamicImports.join(', ')}); it must not reach the runtime at all`
+      `the /${name} subpath has dynamic imports (${dynamicImports.join(', ')}); it must not reach the runtime at all`
     )
   }
   console.log(
-    `[embed] /oauth subpath: ${oauth.chunks.size} chunks / ${oauthBytes} bytes on its static graph`
+    `[embed] /${name} subpath: ${closure.chunks.size} chunks / ${bytes} bytes on its static graph`
   )
-}
-for (const name of ['oauth.js', 'oauth.d.ts']) {
-  if (!files.includes(join(distDir, name))) {
-    failures.push(`dist/${name} was not emitted`)
+  for (const file of [`${name}.js`, `${name}.d.ts`]) {
+    if (!files.includes(join(distDir, file))) {
+      failures.push(`dist/${file} was not emitted`)
+    }
   }
 }
 
