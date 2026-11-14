@@ -280,12 +280,14 @@ pattern.
 Your tools are built before your editor mounts, so give them a handle to call instead of the editor
 itself. `createStageControllerHandle<TController>(notMountedMessage)` returns one. Your editor calls
 `handle.setController(controller)` when it mounts and `handle.setController(null)` when it unmounts.
-Until then, every call rejects with `notMountedMessage`, and the model reads that as the tool's error:
+Until then, every call rejects with `notMountedMessage`, and the model reads that as the tool's error.
+Your editor usually loads eagerly, so create the handle from the [`/stage` subpath](#the-stage-subpath)
+in a module of its own, and build the tools in the module you load lazily:
 
-```ts
-import { createStageControllerHandle, createStageTools, z } from '@nntin/tinytinkerer-embed'
+```ts title="src/editor-handle.ts"
+import { createStageControllerHandle } from '@nntin/tinytinkerer-embed/stage'
 
-type EditorController = {
+export type EditorController = {
   getEditorState: (input: unknown) => Promise<unknown>
   setModelParameters: (input: unknown) => Promise<unknown>
 }
@@ -293,6 +295,11 @@ type EditorController = {
 export const editorHandle = createStageControllerHandle<EditorController>(
   'The editor is still loading'
 )
+```
+
+```ts title="src/assistant.tsx (lazy)"
+import { createStageTools, z } from '@nntin/tinytinkerer-embed'
+import { editorHandle, type EditorController } from './editor-handle'
 
 const tools = createStageTools<EditorController>({
   handle: editorHandle,
