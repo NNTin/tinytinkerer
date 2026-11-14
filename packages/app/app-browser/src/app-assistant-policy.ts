@@ -62,9 +62,20 @@ export type AppAssistantPolicy = {
    * Extra system instructions for one reasoning boundary, appended to that
    * boundary's shared prompt.
    *
-   * `toolIds` are the tools that actually **registered** for this run — after
-   * the tool picker's per-tool disablement — so instructions never advertise a
-   * tool the model cannot call.
+   * `toolIds` are the ids of every tool that actually **registered** for this
+   * run, in registration order: MCP tools (`mcp:<server id>:<tool>`, the app's
+   * own servers first, then the user's), plugin tools, then the app's own
+   * tools. So instructions never advertise a tool the model cannot call:
+   *
+   * - a tool the user unchecked in the tool picker is absent;
+   * - an MCP server's tools are absent while it is disabled, still
+   *   discovering, failed discovery, or the user is signed out;
+   * - each id appears once. A tool dropped by an id collision is not listed
+   *   separately: its id names the tool that won (the first registered). Use a
+   *   result's `source` when provenance matters.
+   *
+   * Gate an instruction on the tool it describes, e.g. include KiPrint guidance
+   * only when `toolIds.includes('mcp:kiprint:create_project')`.
    */
   instructions?: (input: {
     boundary: AppInstructionBoundary

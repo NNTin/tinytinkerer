@@ -265,6 +265,37 @@ boundary are still appended after it. The planning and decision prompts state a 
 planning assistant…") rather than an identity, so `identity` leaves them alone; add to them with
 `instructions`.
 
+### Instructions per boundary
+
+`appAssistantPolicy.instructions({ boundary, toolIds })` returns extra system text for one boundary
+(`'planning'`, `'decision'` or `'synthesis'`), or `undefined` for none. `toolIds` lists every tool
+that registered for this run, in registration order (see
+[Tool ids and collisions](#tool-ids-and-collisions)): MCP tools as `mcp:<server id>:<tool>`, yours
+first and then the user's, then plugin tools, then your `appToolGroup`. Gate each instruction on
+the tool it describes, so the model is never told about a tool it cannot call:
+
+```ts
+const app = createBrowserApp(config, {
+  plugins,
+  mcpServers: [{ id: 'kiprint', name: 'KiPrint', url: 'https://kiprint.nntin.xyz/mcp' }],
+  appAssistantPolicy: {
+    instructions: ({ toolIds }) =>
+      toolIds.includes('mcp:kiprint:create_project')
+        ? 'Use the KiPrint tools to turn a finished board into a printable project.'
+        : undefined
+  }
+})
+```
+
+A tool is missing from `toolIds` when:
+
+- the user unchecked it in the tool picker;
+- its MCP server is disabled, still discovering, failed discovery, or the user is signed out;
+- its plugin is not active.
+
+Each id appears once. If two tools claim one id, only the first registered is listed, under that
+id. Check a result's `source` when you need to know which one ran.
+
 ### Tools
 
 A tool is `{ id, description, schema, execute }`, where `schema` is a Zod schema for the tool's
@@ -366,7 +397,8 @@ const app = createBrowserApp(config, { plugins, mcpServers })
 
 - **Ids:** an `id` must be unique and contain no `:`. `createBrowserApp` throws otherwise. Tools
   register as `mcp:<id>:<toolName>`. They run in the same tool-calling loop as your
-  `appToolGroup`, so one turn can chain many calls.
+  `appToolGroup`, so one turn can chain many calls. Once discovered, they are in the `toolIds` your
+  [`instructions`](#instructions-per-boundary) receive.
 - **Discovery:** discovery runs during `initializeBrowserApp`, and again whenever the user signs in,
   signs out or switches accounts. While signed out it sends nothing, because the edge's MCP routes
   need a signed-in caller.
