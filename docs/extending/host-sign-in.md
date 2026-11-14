@@ -97,9 +97,11 @@ import {
 } from '@nntin/tinytinkerer-embed/oauth'
 ```
 
-**Never import the package root from eager code.** The root is not tree-shakeable. One static
-import from it, even of a string constant, can move the whole runtime into your startup bundle:
-CanFactory measured +437 KB gzipped. The `/oauth` subpath is side-effect free and imports nothing,
+**Never import the package root from eager code.** Most root exports are defined in the runtime's
+own chunk, and one static import of those brings the runtime into your startup bundle: before
+issue #523, CanFactory measured +437 KB gzipped for a single string constant. Which exports are
+cheap from the root is a build detail
+([Eager code and lazy code](./embed-package.md#eager-code-and-lazy-code)). The `/oauth` subpath is side-effect free and imports nothing,
 neither React nor the runtime. The package's build fails if its graph grows past a few kilobytes,
 and the package's acceptance host imports it eagerly and checks its startup bundle's gzipped size.
 

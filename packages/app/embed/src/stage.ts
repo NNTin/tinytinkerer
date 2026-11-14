@@ -4,10 +4,10 @@
  *
  * A host's editor module installs its stage controller at startup —
  * `handle.setController(controller)` when the editor mounts — while the
- * assistant, and with it the runtime, is still behind a dynamic `import()`. The
- * package root is not tree-shakeable, so importing the handle from there would
- * put the whole runtime in the host's startup bundle. This subpath is side-effect
- * free and imports nothing: no React, no Zod, no stores.
+ * assistant, and with it the runtime, is still behind a dynamic `import()`.
+ * Which root exports a host's bundler can drop the runtime for is a build
+ * detail that can change between releases; this subpath is the contract. It is
+ * side-effect free and imports nothing: no React, no Zod, no stores.
  * `scripts/check-package.mjs` fails the build if its chunk graph grows past a
  * few kilobytes, and the acceptance host imports it eagerly and measures its own
  * startup chunk.

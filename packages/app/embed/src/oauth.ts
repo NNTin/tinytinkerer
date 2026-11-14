@@ -2,10 +2,11 @@
  * `@nntin/tinytinkerer-embed/oauth` — finishing GitHub's sign-in redirect from
  * a host's EAGER code (issue #518, F3).
  *
- * The package root is not tree-shakeable: one static import of it, even of a
- * string constant, puts the whole runtime in the host's startup bundle. A host
- * that must complete the callback before its own router runs imports this
- * subpath instead. It is side-effect free and imports nothing — no React, no
+ * Most of the package root is defined in the runtime's own chunk: one static
+ * import of it can put the whole runtime in the host's startup bundle, and which
+ * exports escape that is a build detail (issue #523, G2). A host that must
+ * complete the callback before its own router runs imports this subpath
+ * instead. It is side-effect free and imports nothing — no React, no
  * stores, no telemetry; `scripts/check-package.mjs` fails the build if its
  * chunk graph grows past a few kilobytes, and the acceptance host imports it
  * eagerly and measures its own startup chunk.

@@ -20,6 +20,9 @@
  *    G1). A host imports them from its EAGER code, so each static graph must
  *    stay a few kilobytes: no peer (React), no dynamic import, no chunk the
  *    runtime entry also needs beyond the small leaf chunks they share.
+ * 5. **The root's light exports stay out of the runtime chunk** (issue #523,
+ *    G2): every `codeSplitting` group in vite.config.ts still emits its own
+ *    chunk, so importing only those exports from the root stays cheap.
  *
  * The JavaScript checks read the chunk graph the bundler itself recorded
  * (`.build/bundle-graph.json`, written by vite.config.ts) rather than
@@ -305,6 +308,28 @@ for (const { name, issue, budget } of LIGHT_SUBPATHS) {
     if (!files.includes(join(distDir, file))) {
       failures.push(`dist/${file} was not emitted`)
     }
+  }
+}
+
+// ── 5. the root's light chunks ──────────────────────────────────────────────
+// vite.config.ts's `codeSplitting.groups` (issue #523, G2) keep Zod, contracts,
+// the plugin catalogue and the generic tool-tree summarizer out of `index.js`,
+// so a host importing only those root exports drops the runtime. A group whose
+// `test` stops matching (a moved package, a renamed file) emits nothing and the
+// modules silently fall back into `index.js`, re-growing every cheap root import
+// to ~88 KB gz and voiding the sizes in docs/extending/embed-package.md. Each
+// group must therefore emit its own chunk, imported by the entry.
+for (const group of ['zod', 'contracts', 'catalogue', 'tool-tree-summarizer']) {
+  const pattern = new RegExp(`^chunks/${group}-[\\w-]+\\.js$`)
+  const chunk = Object.keys(graph).find((name) => pattern.test(name))
+  if (!chunk) {
+    failures.push(
+      `no chunks/${group}-*.js was emitted; its codeSplitting group in vite.config.ts matched no module (issue #523 G2)`
+    )
+  } else if (!graph['index.js']?.imports.includes(chunk)) {
+    failures.push(
+      `index.js does not import ${chunk}; the root no longer re-exports from it (issue #523 G2)`
+    )
   }
 }
 
