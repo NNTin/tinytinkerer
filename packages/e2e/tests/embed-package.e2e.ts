@@ -97,14 +97,20 @@ test.describe('embed package acceptance (#510 T1)', () => {
         accent: root.getPropertyValue('--accent').trim(),
         muted: root.getPropertyValue('--muted').trim(),
         colorScheme: root.colorScheme,
-        stageAccent: stage ? getComputedStyle(stage).getPropertyValue('--tt-accent').trim() : null
+        stageAccent: stage ? getComputedStyle(stage).getPropertyValue('--tt-accent').trim() : null,
+        stageMuted: stage ? getComputedStyle(stage).getPropertyValue('--tt-muted').trim() : null
       }
     })
     expect(tokens).toEqual({
       accent: '#bd5839',
       muted: '#4b5563',
       colorScheme: 'normal',
-      stageAccent: '#bd5839'
+      // `theme.accent` is inline on the stage, so it beats the host's
+      // `--tt-accent` on the wrapper...
+      stageAccent: '#bd5839',
+      // ...while `--tt-muted`, which `theme` leaves alone, is the host's: its
+      // wrapper rule beats the package default declared there (issue #523, G5).
+      stageMuted: '#6b6b6b'
     })
 
     await sendMessage(page, 'How big is the perfboard-70x90?')

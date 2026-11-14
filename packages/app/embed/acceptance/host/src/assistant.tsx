@@ -74,7 +74,7 @@ const floating = new URLSearchParams(window.location.search).get('layout') === '
 
 export default function Assistant(): ReactNode {
   return (
-    <div className="tt-app-embed">
+    <div className="tt-app-embed host-assistant">
       <BrowserAppShell
         app={app}
         config={config}
