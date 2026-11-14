@@ -359,7 +359,8 @@ const app = createBrowserApp(config, { plugins, mcpServers })
 
   For those hosts the edge drops any token the browser sends and injects its own. The hosts stay
   reachable even when the edge restricts MCP hosts with `MCP_ALLOWED_HOSTS`. The TinyTinkerer
-  edges list `kiprint.nntin.xyz` (production) and `kiprint-preview.nntin.xyz` (develop). See
+  edges list `kiprint.nntin.xyz` (production) and `kiprint-preview.nntin.xyz` (develop). While
+  CanFactory production temporarily uses the develop edge, develop lists `kiprint.nntin.xyz` too. See
   [Host-provided MCP servers](../self-hosting/vercel-deployment.md#host-provided-mcp-servers) for
   the edge side.
 

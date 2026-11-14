@@ -216,13 +216,18 @@ Production (top-level):
 Develop (`env.develop`, worker name `tinytinkerer-edge-develop`):
 
 - custom domain route: `api.dev.tiny.nntin.xyz`
-- `ALLOWED_ORIGINS=http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz,https://canfactory-preview.nntin.xyz,http://localhost:5173`
+- `ALLOWED_ORIGINS=http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz,https://canfactory-preview.nntin.xyz,https://canfactory.nntin.xyz,http://localhost:5173`
   (the preview wildcard lives here, not on production, because PR previews call
   the develop edge; `localhost:5173` is CanFactory's local dev server and is on
   the develop edge only)
-- `REQUIRE_AUTH_ORIGINS=https://canfactory-preview.nntin.xyz,http://localhost:5173`
-- `MCP_HOST_SERVERS=kiprint-preview.nntin.xyz`
+- `REQUIRE_AUTH_ORIGINS=https://canfactory-preview.nntin.xyz,https://canfactory.nntin.xyz,http://localhost:5173`
+- `MCP_HOST_SERVERS=kiprint-preview.nntin.xyz,kiprint.nntin.xyz`
 - `SENTRY_ENVIRONMENT=develop`
+
+CanFactory production (`https://canfactory.nntin.xyz`) **temporarily uses the develop edge** until
+it is stable, then switches to the production edge. That is why `https://canfactory.nntin.xyz` and
+`kiprint.nntin.xyz` appear in both configs. The production entries stay so the switch needs no edge
+change; drop the develop ones once it has happened.
 
 #### Required sign-in per origin
 
@@ -323,6 +328,9 @@ You can store one GitHub Actions secret, `MCP_HOST_TOKENS`, for both Workers. Ea
 ```json
 { "kiprint.nntin.xyz": "<prod token>", "kiprint-preview.nntin.xyz": "<develop token>" }
 ```
+
+While CanFactory production uses the develop edge, the develop Worker lists both hosts in
+`MCP_HOST_SERVERS`, so it injects both entries.
 
 Keep the JSON on one line: the workflow writes it into a dotenv secrets file. If the secret is not valid JSON, the edge logs that (without its contents) and injects no token. Calls to the host server then reach it unauthenticated and are rejected there.
 
