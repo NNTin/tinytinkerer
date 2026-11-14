@@ -182,7 +182,8 @@ test.describe('embed package floating overlay (#523 G3/G4)', () => {
     await page.getByRole('button', { name: 'Minimize widget' }).click()
     await page.getByRole('button', { name: 'Restore widget' }).click()
     await expect(page.getByRole('button', { name: 'Minimize widget' })).toBeVisible()
-    await expect(page.getByPlaceholder('Ask anything')).toBeVisible()
+    // The floating body's composer (its placeholder differs from the docked one's).
+    await expect(page.locator('.widget-floating-shell textarea')).toBeVisible()
   })
 
   test('the default 400px panel is clamped to a phone viewport', async ({ page }) => {
