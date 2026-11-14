@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import type { Tool } from '@tinytinkerer/app-core'
+import type { McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
+import type { PluginModule, Tool } from '@tinytinkerer/app-core'
 import type { AppAssistantPolicy, AppToolResultRecord } from '../src/app-assistant-policy.js'
 import { createRuntime } from '../src/runtime/create-runtime.js'
 
@@ -38,6 +39,8 @@ const harness = (options: {
   policy?: AppAssistantPolicy
   tools?: Tool<unknown, unknown>[]
   disabled?: string[]
+  // Any other runtime option: MCP servers and their discovery, plugins.
+  runtime?: Partial<Parameters<typeof createRuntime>[0]>
 }): Harness => {
   const requests: string[] = []
   const queue = [...options.responses]
@@ -62,7 +65,8 @@ const harness = (options: {
       tools: options.tools ?? [appTool('alpha'), appTool('beta')]
     },
     ...(options.disabled ? { appToolDisablement: { demo: options.disabled } } : {}),
-    ...(options.policy ? { appAssistantPolicy: options.policy } : {})
+    ...(options.policy ? { appAssistantPolicy: options.policy } : {}),
+    ...options.runtime
   })
 
   return {
@@ -234,5 +238,153 @@ describe('an app assistant policy', () => {
 
     expect(await test.run()).toBe('one two!')
     expect(finalizeAnswer).toHaveBeenCalledTimes(1)
+  })
+})
+
+// The policy's `toolIds` are every tool that registered for the run, not only the
+// app group's. CanFactory gates its KiPrint instructions on
+// `mcp:kiprint:create_project`; with app tools only, that rule was always dropped.
+describe('the tool ids an app assistant policy is bound to', () => {
+  const KIPRINT_TOOL = 'mcp:kiprint:create_project'
+  const KIPRINT_POLICY = 'POLICY(kiprint)'
+
+  const server = (id: string, enabled = true): McpServerConfig => ({
+    id,
+    name: id,
+    url: `https://${id}.test/mcp`,
+    enabled
+  })
+
+  const discovered = (serverId: string, ...toolNames: string[]): McpDiscoveryResult => ({
+    serverId,
+    serverName: serverId,
+    syncedAt: '2026-11-14T00:00:00.000Z',
+    tools: toolNames.map((toolName) => ({
+      toolName,
+      description: toolName,
+      inputSchema: { type: 'object', properties: {} }
+    }))
+  })
+
+  const plugin = (id: string, toolIds: string[]): PluginModule => ({
+    manifest: {
+      id,
+      label: id,
+      description: 'plugin',
+      toolDescriptors: toolIds.map((toolId) => ({
+        id: toolId,
+        description: toolId,
+        schema: z.object({}).passthrough()
+      }))
+    },
+    createPlugin: () => ({ id, createTools: () => toolIds.map((toolId) => appTool(toolId)) })
+  })
+
+  // A rule gated on a KiPrint tool, the shape CanFactory's policy takes.
+  const kiprintGated = () =>
+    vi.fn(({ toolIds }: { toolIds: readonly string[] }) =>
+      toolIds.includes(KIPRINT_TOOL) ? KIPRINT_POLICY : undefined
+    )
+
+  const toolIdsSeen = (instructions: ReturnType<typeof kiprintGated>): readonly string[] =>
+    instructions.mock.calls[0]?.[0].toolIds ?? []
+
+  const run = async (
+    runtime: Partial<Parameters<typeof createRuntime>[0]>,
+    disabled?: string[]
+  ) => {
+    const instructions = kiprintGated()
+    const test = harness({
+      responses: [prose('no'), prose('answer')],
+      policy: { instructions },
+      ...(disabled ? { disabled } : {}),
+      runtime
+    })
+    await test.run()
+    return { instructions, prompts: test.systemPrompts() }
+  }
+
+  it('includes a host MCP tool once its server is discovered, so a rule gated on it appears', async () => {
+    const { instructions, prompts } = await run({
+      hostMcpServers: [server('kiprint')],
+      hostMcpDiscovery: { kiprint: discovered('kiprint', 'create_project', 'export_project') }
+    })
+
+    // Registration order: MCP first, then the app group.
+    expect(toolIdsSeen(instructions)).toEqual([
+      KIPRINT_TOOL,
+      'mcp:kiprint:export_project',
+      'alpha',
+      'beta'
+    ])
+    expect(prompts[0]).toContain(KIPRINT_POLICY)
+    expect(prompts[1]).toContain(KIPRINT_POLICY)
+  })
+
+  it("includes a user's MCP tools after the host's", async () => {
+    const { instructions } = await run({
+      hostMcpServers: [server('kiprint')],
+      hostMcpDiscovery: { kiprint: discovered('kiprint', 'create_project') },
+      mcpServers: [server('weather')],
+      mcpDiscovery: { weather: discovered('weather', 'get_weather') }
+    })
+
+    expect(toolIdsSeen(instructions)).toEqual([
+      KIPRINT_TOOL,
+      'mcp:weather:get_weather',
+      'alpha',
+      'beta'
+    ])
+  })
+
+  it('drops the rule while the server is down, missing or disabled', async () => {
+    const cases: Partial<Parameters<typeof createRuntime>[0]>[] = [
+      // Discovery failed.
+      {
+        hostMcpServers: [server('kiprint')],
+        hostMcpDiscovery: { kiprint: { ...discovered('kiprint'), error: 'Bad gateway' } }
+      },
+      // Discovery has not finished, or the user is signed out.
+      { hostMcpServers: [server('kiprint')], hostMcpDiscovery: {} },
+      // The server is not configured at all.
+      {},
+      // A user's server they switched off.
+      {
+        mcpServers: [server('kiprint', false)],
+        mcpDiscovery: { kiprint: discovered('kiprint', 'create_project') }
+      }
+    ]
+    for (const runtime of cases) {
+      const { instructions, prompts } = await run(runtime)
+      expect(toolIdsSeen(instructions)).toEqual(['alpha', 'beta'])
+      expect(prompts.join('\n')).not.toContain(KIPRINT_POLICY)
+    }
+  })
+
+  it('leaves out plugin and app tools the user unchecked in the tool picker', async () => {
+    const { instructions } = await run(
+      {
+        hostMcpServers: [server('kiprint')],
+        hostMcpDiscovery: { kiprint: discovered('kiprint', 'create_project') },
+        pluginModules: [plugin('multi', ['tool_a', 'tool_b'])],
+        pluginActivation: { multi: true },
+        pluginDisabledTools: { multi: ['tool_a'] }
+      },
+      ['beta']
+    )
+
+    expect(toolIdsSeen(instructions)).toEqual([KIPRINT_TOOL, 'tool_b', 'alpha'])
+  })
+
+  it('lists a collided id once, for the tool that won it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { instructions } = await run({
+      pluginModules: [plugin('shadow', ['alpha'])],
+      pluginActivation: { shadow: true }
+    })
+    warn.mockRestore()
+
+    // The plugin registered `alpha` first, so the app's `alpha` was dropped.
+    expect(toolIdsSeen(instructions)).toEqual(['alpha', 'beta'])
   })
 })
