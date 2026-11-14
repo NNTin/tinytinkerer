@@ -615,30 +615,32 @@ color-scheme: dark; }`.
 
 #### Where the tokens land
 
-Three sources set the tokens, on two elements:
+Precedence, highest first: **the `theme` option > your CSS on the wrapper > the package's
+defaults**. `theme` values are set inline on `ChatApp`'s inner stage element, not on your wrapper.
 
-| Source                                | Element                                                                             | How                                                            |
-| ------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| The package's defaults (`styles.css`) | The outermost `.tt-app-embed`: your wrapper, or the stage if there's no wrapper     | `:where(.tt-app-embed:not(.tt-app-embed *))`, zero specificity |
-| Your own CSS                          | Wherever your selectors match, usually your wrapper                                 | An ordinary rule                                               |
-| `theme`                               | `ChatApp`'s stage element, `.widget-stage` or `.sidebar-stage`, inside your wrapper | An inline `style`, one `--tt-*` property per field set         |
+| Precedence | Source                                | Element                                                                                   | How                                                            |
+| ---------- | ------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1          | `theme`                               | `ChatApp`'s inner stage element, `.widget-stage` or `.sidebar-stage`, inside your wrapper | An inline `style`, one `--tt-*` property per field set         |
+| 2          | Your own CSS                          | Your wrapper, or wherever else your selectors match                                       | An ordinary rule                                               |
+| 3          | The package's defaults (`styles.css`) | The outermost `.tt-app-embed`: your wrapper, or the stage if there's no wrapper           | `:where(.tt-app-embed:not(.tt-app-embed *))`, zero specificity |
 
 The stage also carries `tt-app-embed`, and the derived values, such as `--tt-accent-ring`, are
 declared again on every `.tt-app-embed`. So they're computed from the bases in force at the stage,
 whichever source set them.
 
-For each base token the precedence is, highest first:
+Why, for each base token:
 
 1. **A `theme` field.** It's inline on the stage, so it beats any rule on your wrapper, and any
    ordinary rule on the stage itself. Only an `!important` declaration on the stage outranks it.
-2. **Your CSS.** A rule on your wrapper is inherited by the stage. A rule that targets the stage
-   (`.my-assistant .tt-app-embed`) also works.
+2. **Your CSS.** A rule on your wrapper, such as `.my-assistant.tt-app-embed { --tt-muted: #888; }`,
+   is inherited by the stage. A rule that targets the stage (`.my-assistant .tt-app-embed`) also
+   works.
 3. **The package's defaults.** At zero specificity, any rule of yours wins over them.
 
-To have your stylesheet decide a base, for example per theme or per media query, leave that field
-out of `theme` and declare the token on your wrapper. To follow one of your own variables live,
-set it in `theme` as `var(--your-token)`. It resolves at the stage, against what your page has
-there.
+**To let your CSS own a token, omit that field from `theme`.** Then declare the token on your
+wrapper, for example per theme or per media query. To follow one of your own variables live
+instead, set it in `theme` as `var(--your-token)`. It resolves at the stage, against what your page
+has there.
 
 ### Assets
 
