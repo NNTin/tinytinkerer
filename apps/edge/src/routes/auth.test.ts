@@ -132,12 +132,14 @@ describe('POST /auth/github/exchange', () => {
 
   describe('redirect URI validation (issue #510 T5)', () => {
     // The develop edge's real ALLOWED_ORIGINS (apps/edge/wrangler.jsonc): its
-    // own surfaces, every PR preview, and CanFactory's preview + local dev.
+    // own surfaces, every PR preview, CanFactory's preview + local dev, and
+    // (temporarily) CanFactory production.
     const DEVELOP_ORIGINS = [
       'http://localhost:3111',
       'https://dev.tiny.nntin.xyz',
       'https://*.tiny.preview.nntin.xyz',
       'https://canfactory-preview.nntin.xyz',
+      'https://canfactory.nntin.xyz',
       'http://localhost:5173'
     ].join(',')
     const developEnv = { ...ENV, ALLOWED_ORIGINS: DEVELOP_ORIGINS }
@@ -158,6 +160,11 @@ describe('POST /auth/github/exchange', () => {
         'CanFactory preview',
         'https://canfactory-preview.nntin.xyz',
         'https://canfactory-preview.nntin.xyz/auth/github/callback'
+      ],
+      [
+        'CanFactory production',
+        'https://canfactory.nntin.xyz',
+        'https://canfactory.nntin.xyz/auth/github/callback'
       ]
     ])('accepts %s exchanging for its own callback', async (_label, origin, redirectUri) => {
       const stub = stubGitHub(JSON.stringify({ access_token: 'gho_test123' }))

@@ -21,7 +21,9 @@
   // absent here.
   "vars": {
     // CanFactory (issue #510) embeds the assistant and requires sign-in: it is
-    // listed in both ALLOWED_ORIGINS and REQUIRE_AUTH_ORIGINS.
+    // listed in both ALLOWED_ORIGINS and REQUIRE_AUTH_ORIGINS. CanFactory
+    // production temporarily uses the develop edge instead (see env.develop);
+    // these entries stay so it can switch back without an edge change.
     "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz,https://canfactory.nntin.xyz",
     "REQUIRE_AUTH_ORIGINS": "https://canfactory.nntin.xyz",
     "LITELLM_BASE_URL": "https://litellm.nntin.xyz/",
@@ -36,9 +38,10 @@
     "MCP_HOST_SERVERS": "kiprint.nntin.xyz",
     "SENTRY_ENVIRONMENT": "production"
   },
-  // The develop edge backs both the develop frontend (dev.tiny.nntin.xyz) and
-  // every PR preview (*.tiny.preview.nntin.xyz), so experimental edge work can
-  // ship without touching production. Deployed with `wrangler deploy --env
+  // The develop edge backs the develop frontend (dev.tiny.nntin.xyz), every PR
+  // preview (*.tiny.preview.nntin.xyz) and, temporarily, CanFactory production
+  // (canfactory.nntin.xyz), so experimental edge work can ship without touching
+  // the production edge. Deployed with `wrangler deploy --env
   // develop` from .github/workflows/deploy-edge.yml on pushes to `develop`.
   // `vars` and `routes` are NOT inherited from the top-level config — wrangler
   // replaces them per environment, so both are redeclared here in full. The
@@ -56,15 +59,20 @@
       "vars": {
         // CanFactory's preview and local dev server (issue #510): CORS-allowed
         // and sign-in required. localhost:5173 is on the develop edge only.
-        "ALLOWED_ORIGINS": "http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz,https://canfactory-preview.nntin.xyz,http://localhost:5173",
-        "REQUIRE_AUTH_ORIGINS": "https://canfactory-preview.nntin.xyz,http://localhost:5173",
+        // CanFactory production (canfactory.nntin.xyz) also uses this edge
+        // TEMPORARILY, until the develop edge is stable; it then moves to the
+        // production edge, which already lists it, and should be dropped here.
+        "ALLOWED_ORIGINS": "http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz,https://canfactory-preview.nntin.xyz,https://canfactory.nntin.xyz,http://localhost:5173",
+        "REQUIRE_AUTH_ORIGINS": "https://canfactory-preview.nntin.xyz,https://canfactory.nntin.xyz,http://localhost:5173",
         "LITELLM_BASE_URL": "https://litellm.nntin.xyz/",
         "LITELLM_ALLOWED_BASE_URLS": "https://litellm.nntin.xyz/",
         "LITELLM_USER_MAX_BUDGET_USD": "1",
         "LITELLM_USER_BUDGET_DURATION": "30d",
         "LITELLM_USER_RPM_LIMIT": "10",
         "LITELLM_USER_TPM_LIMIT": "100000",
-        "MCP_HOST_SERVERS": "kiprint-preview.nntin.xyz",
+        // kiprint.nntin.xyz is here for CanFactory production while it
+        // temporarily uses this edge (see above).
+        "MCP_HOST_SERVERS": "kiprint-preview.nntin.xyz,kiprint.nntin.xyz",
         "SENTRY_ENVIRONMENT": "develop"
       }
     }
@@ -77,8 +85,9 @@
   // Optional secret: SENTRY_DSN. SENTRY_RELEASE is set at deploy time from the git SHA.
   // Optional secret: MCP_HOST_TOKENS, a JSON object mapping a MCP_HOST_SERVERS
   // hostname to the bearer token the edge sends it, e.g.
-  // '{"kiprint.nntin.xyz":"<token>"}' (prod) / '{"kiprint-preview.nntin.xyz":"<token>"}'
-  // (develop, `--env develop`). Owner-set; the browser never sees it.
+  // '{"kiprint.nntin.xyz":"<token>"}' (prod) / '{"kiprint-preview.nntin.xyz":"<token>",
+  // "kiprint.nntin.xyz":"<token>"}' (develop, `--env develop`, both hosts while
+  // CanFactory production uses it). Owner-set; the browser never sees it.
   //
   // Optional vars (sensible code-level defaults apply when unset):
   // - MCP_ALLOWED_HOSTS: comma-separated hostnames the MCP proxy may connect to

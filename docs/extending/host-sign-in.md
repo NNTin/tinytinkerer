@@ -61,6 +61,10 @@ const config = resolveBrowserShellBootstrapConfig({
 const app = createBrowserApp(config, { plugins: () => Promise.resolve([]) })
 ```
 
+CanFactory production currently points `edgeBaseUrl` at the develop edge,
+`https://api.dev.tiny.nntin.xyz`, until that edge is stable, then switches to the production edge.
+Both edges allow `https://canfactory.nntin.xyz` and require sign-in for it.
+
 This is the same pattern as [the embed package's minimal host](./embed-package.md#a-minimal-host).
 Resolving fills in what you leave out: the default edge URL, storage namespace and auth mode, and a
 `githubRedirectUri` derived from `baseUrl` and `origin` when you don't pass one. It also drops

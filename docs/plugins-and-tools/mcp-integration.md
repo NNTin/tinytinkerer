@@ -354,7 +354,7 @@ A hostname that appears in `MCP_HOST_TOKENS` but not in `MCP_HOST_SERVERS` never
 
 Users' own servers are unaffected. They follow `MCP_ALLOWED_HOSTS` (or the blocklist) and send their own `bearerToken`, exactly as before.
 
-The tinytinkerer deployments set `MCP_HOST_SERVERS=kiprint.nntin.xyz` on the production edge and `kiprint-preview.nntin.xyz` on the develop edge. See [Vercel deployment](../self-hosting/vercel-deployment.md#host-provided-mcp-servers) for setting the secret.
+The tinytinkerer deployments set `MCP_HOST_SERVERS=kiprint.nntin.xyz` on the production edge and `kiprint-preview.nntin.xyz,kiprint.nntin.xyz` on the develop edge (`kiprint.nntin.xyz` only while CanFactory production temporarily uses the develop edge). See [Vercel deployment](../self-hosting/vercel-deployment.md#host-provided-mcp-servers) for setting the secret.
 
 ### Results and links
 
