@@ -185,7 +185,9 @@ assistant module. An app that is already running doesn't see a token that `/oaut
   every site on the same edge. Set a Content Security Policy on your host. `script-src 'self'`
   limits what an injected script can do, and `connect-src` must allow your edge's origin and
   `https://api.github.com`: the browser calls `GET https://api.github.com/user` with the token
-  directly.
+  directly. TinyTinkerer itself needs no `'unsafe-eval'`. If your own code compiles WebAssembly
+  through embind, as MuJoCo does in a physics worker, that worker may need its own CSP with
+  `'unsafe-eval'`.
 - **The token is sent to the edge and to `api.github.com`.** A `401` from GitHub clears it, so an
   expired token falls back to the sign-in call to action.
 - **`REQUIRE_AUTH_ORIGINS` only shapes your own page.** It keeps your page off the anonymous path,

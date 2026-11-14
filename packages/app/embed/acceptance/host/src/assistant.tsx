@@ -67,6 +67,11 @@ const BootScreen = ({ error }: { error?: string }): ReactNode => (
   <p role="status">{error ? `Assistant failed to start: ${error}` : 'Starting assistant…'}</p>
 )
 
+// `?layout=floating` draws the floating window as the built-in click-through
+// overlay instead of the docked pane (issue #523, G3/G4), with the package's
+// default size, so the spec measures what a host gets without passing any.
+const floating = new URLSearchParams(window.location.search).get('layout') === 'floating'
+
 export default function Assistant(): ReactNode {
   return (
     <div className="tt-app-embed">
@@ -76,12 +81,22 @@ export default function Assistant(): ReactNode {
         BootScreen={BootScreen}
         globalHosts={{ telemetryConsent: false, privacyUpdate: false, konami: false }}
       >
-        <ChatApp
-          mode="sidebar"
-          morphable={false}
-          storageKey="embed-acceptance"
-          LoadingComponent={BootScreen}
-        />
+        {floating ? (
+          <ChatApp
+            mode="floating"
+            overlay
+            morphable={false}
+            storageKey="embed-acceptance-floating"
+            LoadingComponent={BootScreen}
+          />
+        ) : (
+          <ChatApp
+            mode="sidebar"
+            morphable={false}
+            storageKey="embed-acceptance"
+            LoadingComponent={BootScreen}
+          />
+        )}
       </BrowserAppShell>
     </div>
   )

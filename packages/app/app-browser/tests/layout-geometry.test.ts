@@ -7,6 +7,7 @@ import {
   dockedResizeDelta,
   isDeliberateSnap,
   isVerticalEdge,
+  loadStandaloneLayout,
   snapPreviewRect,
   updatePersisted,
   SNAP_INTENT_TRAVEL,
@@ -254,6 +255,22 @@ describe('clampLayout keeps the panel inside the viewport (issue #480 review)', 
     expect(layout.x + layout.width).toBeLessThanOrEqual(280)
     expect(layout.y + layout.height).toBeLessThanOrEqual(380)
   })
+
+  // Issue #523, G4: a host needs no `Math.min(400, innerWidth - 24)` of its own.
+  // The default width is already clamped, to at least the `100vw - 32px` the
+  // issue asks for on any phone the 320px minimum leaves room for.
+  it.each([360, 375, 390, 412, 430])(
+    'opens no wider than min(400px, 100vw - 32px) on a %ipx phone',
+    (width) => {
+      setViewport(width, 800)
+      window.localStorage.clear()
+      const layout = loadStandaloneLayout('test:phone-default', dims)
+
+      expect(layout.width).toBeLessThanOrEqual(Math.min(400, width - 32))
+      expect(layout.x).toBeGreaterThanOrEqual(16)
+      expect(layout.x + layout.width).toBeLessThanOrEqual(width - 16)
+    }
+  )
 
   it('keeps a minimized launcher on screen too', () => {
     setViewport(320, 568)

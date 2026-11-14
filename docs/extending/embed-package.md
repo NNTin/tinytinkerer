@@ -518,8 +518,9 @@ Mixing the two, or passing `presentation` without `onPresentationChange`, is a t
 | `resizable`                                              | docked     | A resize handle on the panel. Ignored (always on) when `morphable`                                                                             |
 | `sizeVariant`                                            | docked     | `'comfortable'` (default) or `'mobile'`, a full-bleed phone layout                                                                             |
 | `framed`                                                 | floating   | Draws a rounded card around the conversation inside the window (default `false`)                                                               |
-| `defaultWidth`, `defaultHeight`, `minWidth`, `minHeight` | floating   | The floating window's initial and minimum size, in pixels                                                                                      |
-| `stageClassName`                                         | both       | An extra class on the layout's outer stage element, e.g. to position it or make it click-through                                               |
+| `defaultWidth`, `defaultHeight`, `minWidth`, `minHeight` | floating   | The floating window's initial and minimum size, in pixels. Always clamped to the viewport, see [Size](#size)                                   |
+| `overlay`                                                | floating   | Draws the window as a click-through overlay fixed to the viewport (default `false`), see [Floating over your page](#floating-over-your-page)   |
+| `stageClassName`                                         | both       | An extra class on the layout's outer stage element, e.g. to position it or give the overlay a `z-index`                                        |
 | `starterPrompts`, `starterPromptCount`                   | both       | Replace the app's `starterPrompts` on this surface, and how many to offer                                                                      |
 
 A host that docks the assistant into its own pane, rather than over the page, passes
@@ -537,6 +538,38 @@ A host that docks the assistant into its own pane, rather than over the page, pa
   />
 </div>
 ```
+
+### Floating over your page
+
+By default the floating stage is an in-flow block at least `100vh` tall: the window is the page,
+as on TinyTinkerer's own widget app. To draw it over a page of your own, pass `overlay`:
+
+```tsx
+<ChatApp storageKey="canfactory-assistant" LoadingComponent={Loading} mode="floating" overlay />
+```
+
+The stage is then `position: fixed; inset: 0; z-index: 30` and `pointer-events: none`. Clicks,
+scrolling and hover outside the window reach your page. The window and the launcher that replaces
+it while minimized stay interactive. You need no CSS of your own for this. To change the
+`z-index`, add a `stageClassName` and a rule for it:
+`.widget-stage.my-assistant-stage { z-index: 1000; }`. `overlay` has no effect on the docked
+layout, so a morphable window that docks gets the ordinary in-flow pane.
+
+### Size
+
+The floating window opens at `defaultWidth` × `defaultHeight` (400 × 680 by default), and can't be
+resized below `minWidth` × `minHeight` (320 × 420). Every size is clamped to the viewport, at
+first paint, from a stored layout, and again whenever the viewport resizes:
+
+- The window keeps a 24px margin on each side, so a 400px default opens 327px wide on a 375px
+  phone. That's within `min(400px, 100vw - 32px)`, so don't pass a viewport-derived `defaultWidth`
+  yourself.
+- Where the viewport can't fit the minimum plus both margins, the margin shrinks first. Where it
+  can't fit the minimum at all, the window shrinks below it rather than overflow.
+
+The clamp is measured against the browser window, which is the stage's own box with `overlay`.
+Without it, the window is placed in an in-flow stage, so keep that stage at the page's left and top
+edges.
 
 ## Stylesheets
 
@@ -579,6 +612,33 @@ resolveBrowserShellBootstrapConfig({
 `theme` sets the five bases it names. To set the others, such as `--tt-muted` or `--tt-link`, or to
 change `color-scheme`, declare them on your wrapper: `.my-assistant.tt-app-embed { --tt-muted: …;
 color-scheme: dark; }`.
+
+#### Where the tokens land
+
+Three sources set the tokens, on two elements:
+
+| Source                                | Element                                                                             | How                                                            |
+| ------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| The package's defaults (`styles.css`) | The outermost `.tt-app-embed`: your wrapper, or the stage if there's no wrapper     | `:where(.tt-app-embed:not(.tt-app-embed *))`, zero specificity |
+| Your own CSS                          | Wherever your selectors match, usually your wrapper                                 | An ordinary rule                                               |
+| `theme`                               | `ChatApp`'s stage element, `.widget-stage` or `.sidebar-stage`, inside your wrapper | An inline `style`, one `--tt-*` property per field set         |
+
+The stage also carries `tt-app-embed`, and the derived values, such as `--tt-accent-ring`, are
+declared again on every `.tt-app-embed`. So they're computed from the bases in force at the stage,
+whichever source set them.
+
+For each base token the precedence is, highest first:
+
+1. **A `theme` field.** It's inline on the stage, so it beats any rule on your wrapper, and any
+   ordinary rule on the stage itself. Only an `!important` declaration on the stage outranks it.
+2. **Your CSS.** A rule on your wrapper is inherited by the stage. A rule that targets the stage
+   (`.my-assistant .tt-app-embed`) also works.
+3. **The package's defaults.** At zero specificity, any rule of yours wins over them.
+
+To have your stylesheet decide a base, for example per theme or per media query, leave that field
+out of `theme` and declare the token on your wrapper. To follow one of your own variables live,
+set it in `theme` as `var(--your-token)`. It resolves at the stage, against what your page has
+there.
 
 ### Assets
 

@@ -1,4 +1,4 @@
-import { StrictMode, Suspense, lazy } from 'react'
+import { StrictMode, Suspense, lazy, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 // The ONLY package imports on the startup path: the side-effect-free `/oauth`
 // subpath here and the `/stage` subpath in ./board-stage. Importing anything
@@ -14,6 +14,17 @@ const Assistant = lazy(() => import('./assistant'))
 
 // The host's editor mounts its stage controller at startup (issue #523, G1).
 installBoardController()
+
+// A control of the host's own, for the floating overlay's click-through check
+// (issue #523, G3): it sits under the overlay's stage, outside the panel.
+const HostCounter = (): ReactNode => {
+  const [clicks, setClicks] = useState(0)
+  return (
+    <button type="button" onClick={() => setClicks((count) => count + 1)}>
+      Host clicks: {clicks}
+    </button>
+  )
+}
 
 const container = document.getElementById('root')
 if (!container) {
@@ -41,6 +52,7 @@ void finishCallback().finally(() => {
     <StrictMode>
       <main>
         <h1>Embed acceptance host</h1>
+        <HostCounter />
         <Suspense fallback={<p role="status">Loading assistant…</p>}>
           <Assistant />
         </Suspense>
