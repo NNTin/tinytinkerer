@@ -11,6 +11,13 @@
         --accent: #bd5839;
         --muted: #4b5563;
       }
+      /* The host themes its wrapper (issue #523, G5): --tt-muted, which `theme`
+         does not set, reaches the surface; --tt-accent, which `theme` does set,
+         is overridden by it, as docs/extending/embed-package.md documents. */
+      .host-assistant.tt-app-embed {
+        --tt-muted: #6b6b6b;
+        --tt-accent: #123456;
+      }
     </style>
   </head>
   <body>

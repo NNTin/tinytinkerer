@@ -65,6 +65,10 @@ type ChatAppBaseProps = {
   minWidth?: number
   minHeight?: number
   stageClassName?: string
+  // Floating only: draw the window as a click-through overlay fixed to the
+  // viewport, so the host page beneath stays usable (issue #523, G3). See
+  // FloatingLayoutProps.overlay.
+  overlay?: boolean
   // Cold-start suggestions for this surface, replacing the app's own
   // `starterPrompts` in the derived list (issue #480).
   starterPrompts?: readonly string[]
@@ -129,6 +133,7 @@ const ChatAppLayout = ({
   minWidth,
   minHeight,
   stageClassName,
+  overlay,
   starterPrompts,
   starterPromptCount
 }: ChatAppLayoutProps): ReactNode => {
@@ -202,6 +207,7 @@ const ChatAppLayout = ({
       {...(minWidth !== undefined ? { minWidth } : {})}
       {...(minHeight !== undefined ? { minHeight } : {})}
       {...(stageClassName !== undefined ? { stageClassName } : {})}
+      {...(overlay !== undefined ? { overlay } : {})}
       {...(composerPromptWaiting && pendingPrompt
         ? {
             attention: {

@@ -67,6 +67,13 @@ export type FloatingLayoutProps = {
   // click-through (pointer-events: none) so the whiteboard beneath stays usable
   // while the floating shell (pointer-events: auto) remains interactive.
   stageClassName?: string
+  // Render the stage as a click-through overlay fixed to the viewport (issue
+  // #523, G3): pointer events pass through to the page beneath everywhere
+  // except the panel and the minimized launcher. Off by default, because the
+  // widget app's stage IS its page (`position: relative; min-height: 100vh`);
+  // an embedder drawing the window over its own page turns it on instead of
+  // hand-writing the `stageClassName` CSS each first-party overlay carries.
+  overlay?: boolean
   // When set, the shell bar shows a "dock" button (docks to the caller's side) and
   // dragging near a viewport edge morphs into that edge's docked split. Receives the
   // released snap edge, or no argument for the plain dock button.
@@ -273,6 +280,7 @@ export const FloatingLayout = ({
   minWidth,
   minHeight,
   stageClassName,
+  overlay = false,
   onDock,
   attention,
   children
@@ -640,7 +648,14 @@ export const FloatingLayout = ({
   // #496): this is the element `themeStyle` writes the base palette onto, and
   // the derived token graph has to be re-declared here or it resolves against
   // `:root`'s bases instead of the host's.
-  const stageClass = ['widget-stage', 'tt-app-embed', stageClassName].filter(Boolean).join(' ')
+  const stageClass = [
+    'widget-stage',
+    'tt-app-embed',
+    overlay ? 'widget-stage--overlay' : undefined,
+    stageClassName
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   const snapPreview = snapEdge
     ? (() => {

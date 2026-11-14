@@ -96,6 +96,38 @@ describe('ChatApp', () => {
     expect(screen.queryByTestId('floating-body')).toBeNull()
   })
 
+  // Issue #523, G3. The click-through itself is CSS, so the real-browser half —
+  // the host page under the stage takes the click, the panel and launcher keep
+  // theirs — is packages/e2e/tests/embed-package.e2e.ts.
+  it('marks the floating stage as a click-through overlay only when asked', () => {
+    const { container, rerender } = render(
+      <ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} />
+    )
+    const stage = container.querySelector('.widget-stage')
+    expect(stage).toHaveClass('tt-app-embed')
+    // Off by default: the widget app's stage is its page, not an overlay.
+    expect(stage).not.toHaveClass('widget-stage--overlay')
+
+    rerender(<ChatApp mode="floating" overlay storageKey="k" LoadingComponent={Loading} />)
+    expect(container.querySelector('.widget-stage')).toHaveClass('widget-stage--overlay')
+  })
+
+  it('keeps the overlay class alongside a host stageClassName', () => {
+    const { container } = render(
+      <ChatApp
+        mode="floating"
+        overlay
+        stageClassName="host-stage"
+        storageKey="k"
+        LoadingComponent={Loading}
+      />
+    )
+    expect(container.querySelector('.widget-stage')).toHaveClass(
+      'widget-stage--overlay',
+      'host-stage'
+    )
+  })
+
   it('threads inspectorPanelSupported into the floating body (so the widget can enable it)', () => {
     render(
       <ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} inspectorPanelSupported />

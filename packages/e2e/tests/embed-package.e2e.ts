@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { test, expect, type Page } from '@playwright/test'
 import {
   installAppToolMock,
+  installChatMock,
   sendMessage,
   toolResultFor,
   SYNTHESIS_ANSWER
@@ -96,14 +97,20 @@ test.describe('embed package acceptance (#510 T1)', () => {
         accent: root.getPropertyValue('--accent').trim(),
         muted: root.getPropertyValue('--muted').trim(),
         colorScheme: root.colorScheme,
-        stageAccent: stage ? getComputedStyle(stage).getPropertyValue('--tt-accent').trim() : null
+        stageAccent: stage ? getComputedStyle(stage).getPropertyValue('--tt-accent').trim() : null,
+        stageMuted: stage ? getComputedStyle(stage).getPropertyValue('--tt-muted').trim() : null
       }
     })
     expect(tokens).toEqual({
       accent: '#bd5839',
       muted: '#4b5563',
       colorScheme: 'normal',
-      stageAccent: '#bd5839'
+      // `theme.accent` is inline on the stage, so it beats the host's
+      // `--tt-accent` on the wrapper...
+      stageAccent: '#bd5839',
+      // ...while `--tt-muted`, which `theme` leaves alone, is the host's: its
+      // wrapper rule beats the package default declared there (issue #523, G5).
+      stageMuted: '#6b6b6b'
     })
 
     await sendMessage(page, 'How big is the perfboard-70x90?')
@@ -123,6 +130,74 @@ test.describe('embed package acceptance (#510 T1)', () => {
 
     // ...and the turn finished with the synthesized answer on screen.
     await expect(surface.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+  })
+})
+
+// The built-in floating overlay (issue #523, G3/G4), in the same fresh-npm host:
+// `?layout=floating` mounts `<ChatApp mode="floating" overlay>` with the
+// package's default size, over a page that has a control of its own.
+test.describe('embed package floating overlay (#523 G3/G4)', () => {
+  test.beforeAll(() => {
+    if (!existsSync(join(HOST_DIST, 'index.html'))) {
+      throw new Error(`${HOST_DIST} is missing; see the acceptance suite above.`)
+    }
+  })
+
+  const openFloating = async (page: Page, viewport: { width: number; height: number }) => {
+    const origin = `http://localhost:${requireShellPort('E2E_PORT')}`
+    await installChatMock(page)
+    await serveAcceptanceHost(page, origin)
+    await page.setViewportSize(viewport)
+    await page.goto(`${origin}${HOST_PATH}?layout=floating`)
+    await expect(page.getByRole('button', { name: 'Minimize widget' })).toBeVisible()
+  }
+
+  test('the host page keeps its clicks under the stage; the panel and launcher keep theirs', async ({
+    page
+  }) => {
+    await openFloating(page, { width: 1280, height: 800 })
+
+    // The stage really does cover the whole viewport, the host's button included...
+    const stage = page.locator('.widget-stage.widget-stage--overlay')
+    expect(await stage.boundingBox()).toEqual({ x: 0, y: 0, width: 1280, height: 800 })
+    const hostButton = page.getByRole('button', { name: /^Host clicks:/ })
+    const hostBox = await hostButton.boundingBox()
+    if (!hostBox) throw new Error('the host button has no box')
+    const panelBox = await page.locator('.widget-floating-shell').boundingBox()
+    if (!panelBox) throw new Error('the panel has no box')
+    expect(
+      hostBox.x + hostBox.width <= panelBox.x || hostBox.y + hostBox.height <= panelBox.y
+    ).toBe(true)
+
+    // ...yet the hit test there lands on the host's own control, not the stage.
+    const hit = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.textContent ?? null,
+      { x: hostBox.x + hostBox.width / 2, y: hostBox.y + hostBox.height / 2 }
+    )
+    expect(hit).toBe('Host clicks: 0')
+    await hostButton.click()
+    await expect(hostButton).toHaveText('Host clicks: 1')
+
+    // The panel is interactive, and so is the launcher that replaces it.
+    await page.getByRole('button', { name: 'Minimize widget' }).click()
+    await page.getByRole('button', { name: 'Restore widget' }).click()
+    await expect(page.getByRole('button', { name: 'Minimize widget' })).toBeVisible()
+    // The floating body's composer (its placeholder differs from the docked one's).
+    await expect(page.locator('.widget-floating-shell textarea')).toBeVisible()
+  })
+
+  test('the default 400px panel is clamped to a phone viewport', async ({ page }) => {
+    await openFloating(page, { width: 360, height: 740 })
+
+    const panelBox = await page.locator('.widget-floating-shell').boundingBox()
+    if (!panelBox) throw new Error('the panel has no box')
+    expect(panelBox.width).toBeLessThanOrEqual(Math.min(400, 360 - 32))
+    expect(panelBox.x).toBeGreaterThanOrEqual(16)
+    expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(360 - 16)
+    expect(panelBox.y).toBeGreaterThanOrEqual(0)
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(740)
+    // Nothing scrolls sideways either.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360)
   })
 })
 

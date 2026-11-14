@@ -139,6 +139,24 @@
   overflow: hidden;
 }
 
+/* The built-in click-through overlay (`overlay` prop, issue #523 G3): the stage
+   covers the viewport without taking it, so the page beneath keeps every click,
+   scroll and hover outside the window. Only the floating shell — the panel, or
+   the launcher that replaces it while minimized — takes pointer events back.
+   `:where()` keeps this at `.widget-stage`'s own specificity, so a host's
+   `stageClassName` rule (a z-index, say) still overrides it. */
+.widget-stage:where(.widget-stage--overlay) {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.widget-stage--overlay .widget-floating-shell {
+  pointer-events: auto;
+}
+
 .widget-floating-shell {
   position: absolute;
   display: flex;
