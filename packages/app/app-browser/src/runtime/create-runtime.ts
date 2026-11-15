@@ -457,10 +457,6 @@ export const createRuntime = (options: {
   // itself keeps running regardless (there is no activation to flip).
   const appToolGroup = options.appToolGroup
   const appToolDisablement = options.appToolDisablement ?? {}
-  // The app tools that actually registered, in registration order. The app's own
-  // instructions are bound to exactly this list (issue #478), so a tool the user
-  // unchecked in the tool picker is never described to the model as available.
-  const registeredAppToolIds: string[] = []
   // Per-RUN instances when the group defines its tools with a factory (issue #480
   // review, finding 5), otherwise the session-long catalogue itself. This function
   // runs once per run, which is exactly the moment a group that captures "what was
@@ -471,7 +467,6 @@ export const createRuntime = (options: {
       continue
     }
     if (addTool({ ...tool, source: { kind: 'app', groupId: appToolGroup!.id } })) {
-      registeredAppToolIds.push(tool.id)
       allToolDescriptors.push({
         id: tool.id,
         description: tool.description,
@@ -506,8 +501,20 @@ export const createRuntime = (options: {
   captureDomSnapshot = registeredToolIds.has(RUN_JAVASCRIPT_TOOL_ID)
 
   // The app's grounding/answer policy (issue #478), bound here because this is
-  // where the two things it needs are known: which app tools registered, and
-  // (per run) which of their results succeeded.
+  // where the two things it needs are known: which tools registered, and (per
+  // run) which of their results succeeded.
+  //
+  // Its instructions are bound to EVERY tool that registered for this run, in
+  // registration order: host + user MCP (`mcp:<server>:<tool>`), plugins, then
+  // app tools. Not just the app group's: a policy gated on a host MCP tool (e.g.
+  // CanFactory's `mcp:kiprint:create_project`) must see it once discovery
+  // succeeded. A tool the user unchecked in the tool picker, or one from an MCP
+  // server that is disabled, down or still discovering, never reached `addTool`,
+  // so it is not listed. Each id appears once: a tool that lost an id collision
+  // is not listed separately, and its id names the tool that won (check a
+  // result's `source` for provenance). `Array.from`, not spread — see the
+  // Babel note above.
+  const registeredToolIdList: readonly string[] = Array.from(registeredToolIds)
   const appPolicy = options.appAssistantPolicy
   const policyInstructions = appPolicy?.instructions
   const policyFinalizeAnswer = appPolicy?.finalizeAnswer
@@ -562,7 +569,7 @@ export const createRuntime = (options: {
       ...(policyInstructions || hostMcpNote
         ? {
             appInstructions: (boundary) =>
-              [policyInstructions?.({ boundary, toolIds: registeredAppToolIds }), hostMcpNote]
+              [policyInstructions?.({ boundary, toolIds: registeredToolIdList }), hostMcpNote]
                 .filter((part) => part && part.trim().length > 0)
                 .join('\n\n') || undefined
           }
