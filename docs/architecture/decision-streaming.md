@@ -58,9 +58,14 @@ explicit pre-request phase, shared by streamed and single-shot decisions and syn
 
 - Pacing of at most one second (a nearly spent window) is slept inline. It can be aborted
   and comes before dispatch, so it starts no response clock. Streamed decisions are timed
-  from `request-start`. Single-shot decisions are timed from `ProviderCallOptions.onRequestStart`,
-  which explicit request-start providers call immediately before dispatch; their whole
-  `firstChunkTimeoutMs` budget starts there. Legacy providers remain timed from invocation.
+  from `request-start`. Single-shot decisions are timed from `ProviderCallOptions.onRequestStart`.
+  Opting into `decisionStreamLifecycle: 'explicit-request-start'` obliges `decideNextAction` to
+  call it immediately before dispatch; the whole `firstChunkTimeoutMs` budget starts there. Only
+  the first call counts, and a call after the decision settled arms nothing. The response
+  ceiling (`decisionResponseTimeoutMs`) still runs from invocation as a fallback, so a provider
+  that never reports dispatch is bounded rather than hung. When either budget expires, the
+  attempt's own signal is aborted, so a cooperating provider issues no request afterwards.
+  Legacy providers remain timed from invocation.
 - A longer request-quota, token-quota or post-429 backoff wait is raised as a
   `RateLimitError` before any request. The runtime's existing cooldown handles it like a
   429: `rate.limit.waiting` (the cooldown banner), an abortable wait outside every response
@@ -89,7 +94,7 @@ once per run, when its context is created, on the monotonic clock. That single d
 shared by every decision attempt, retry, Hybrid sub-loop and synthesis attempt. A cooldown
 is admitted only if the time the run has already spent (model and tool time included) plus
 the wait it will actually perform, until the protocol `retryAt`, ends by the deadline.
-Wall-clock changes cannot extend this budget. The deadline governs **cooldown admission
+Wall-clock changes cannot extend this budget. A context created without this anchor is refused every cooldown (fail closed) rather than granted a fresh window. The deadline governs **cooldown admission
 only**; it is not a whole-run timeout. Tools, permission/human-input waits and a synthesis
 stream already running are not cut by it. Inline pacing is separate from it and still
 abortable.

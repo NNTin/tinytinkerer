@@ -47,8 +47,10 @@ const normalizeMaxIterations = (value: number | undefined): number =>
     ? DEFAULT_MAX_ITERATIONS
     : Math.max(1, Math.floor(value))
 
+const DECISION_TIMED_OUT = 'ReAct decision timed out'
+
 const bound = (value: number | undefined, fallback: number): number =>
-  value! >= 0 && Number.isFinite(value) ? value! : fallback
+  value! >= 0 && value! < Infinity ? value! : fallback
 
 export type AgentRuntimeOptions = {
   /**
@@ -190,8 +192,6 @@ export abstract class AgentRuntimeBase {
   protected readonly responseTimeoutMs: number
   protected readonly maxCooldownMs: number
   protected readonly runCooldownDeadlineMs: number
-  // Monotonic start of each run, keyed by its context: anchors cooldown admission.
-  private readonly runStarted = new WeakMap<ExecutionContext, number>()
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly finalizeAssistantContent: AssistantContentFinalizer | undefined
   protected readonly reportError: RuntimeErrorReporter
@@ -235,16 +235,15 @@ export abstract class AgentRuntimeBase {
   abstract run(prompt: string, options?: RunOptions): AsyncGenerator<ChatEvent>
 
   protected createContext(prompt: string, history: ConversationMessage[]): ExecutionContext {
-    const context: ExecutionContext = {
+    return {
       prompt,
       history,
       plan: { complexity: 'low', steps: [] },
       notes: [],
       toolResults: {},
-      toolInvocations: []
+      toolInvocations: [],
+      runStartedAt: performance.now()
     }
-    this.runStarted.set(context, performance.now())
-    return context
   }
 
   // Terminal error handling shared by every strategy: an aborted run ends
@@ -403,6 +402,19 @@ export abstract class AgentRuntimeBase {
     const { provider } = this
     const thoughtStepId = createStepId()
     const parentField = parentStepId ? { parentStepId } : {}
+    // Each attempt's own signal: the user's abort and (below) its deadlines
+    // cancel the request, so no provider dispatches after either.
+    const controller = new AbortController()
+    const userSignal = callOptions.signal
+    const onUserAbort = () => controller.abort()
+    const unlink = () => userSignal?.removeEventListener('abort', onUserAbort)
+    if (userSignal) {
+      if (userSignal.aborted) {
+        controller.abort()
+      } else {
+        userSignal.addEventListener('abort', onUserAbort, { once: true })
+      }
+    }
 
     if (provider.streamDecision) {
       yield createEvent('agent.step.started', {
@@ -412,21 +424,10 @@ export abstract class AgentRuntimeBase {
         title: 'Thinking…'
       })
 
-      // Response timing begins at dispatch for lifecycle-aware providers. The
-      // explicit start is extensible to pre-request quota waiting (#533); legacy
-      // providers retain timing from invocation. Progress is internal, never a
-      // visible thought, and cannot extend the absolute response ceiling.
-      const controller = new AbortController()
-      const userSignal = callOptions.signal
-      const onUserAbort = () => controller.abort()
-      if (userSignal) {
-        if (userSignal.aborted) {
-          controller.abort()
-        } else {
-          userSignal.addEventListener('abort', onUserAbort, { once: true })
-        }
-      }
-
+      // Response timing begins at dispatch for lifecycle-aware providers, after
+      // any pre-request quota wait (#533); legacy providers retain timing from
+      // invocation. Progress is internal, never a visible thought, and cannot
+      // extend the absolute response ceiling.
       let timeout: DecisionTimeoutDiagnostics | undefined
       let startedAt: number | undefined
       let model: string | undefined
@@ -511,9 +512,7 @@ export abstract class AgentRuntimeBase {
       } catch (error) {
         // The provider can throw or end on abort. Both paths produce the same
         // typed timeout; other failures (including user abort/429) pass through.
-        const failure = timeout
-          ? new RuntimeTimeoutError('ReAct decision timed out', timeout)
-          : error
+        const failure = timeout ? new RuntimeTimeoutError(DECISION_TIMED_OUT, timeout) : error
         yield createEvent('agent.step.failed', {
           stepId: thoughtStepId,
           error: failure instanceof Error ? failure.message : 'ReAct decision failed'
@@ -521,9 +520,7 @@ export abstract class AgentRuntimeBase {
         throw failure
       } finally {
         clearTimeout(timer)
-        if (userSignal && !userSignal.aborted) {
-          userSignal.removeEventListener('abort', onUserAbort)
-        }
+        unlink()
       }
 
       // The decision resolves at end-of-stream, so carry its kind on the completed
@@ -545,15 +542,34 @@ export abstract class AgentRuntimeBase {
     // Non-streaming decisions wait for the whole model response in one shot, so
     // they get the same generous reasoning-model budget as a streaming first
     // chunk rather than the short inter-chunk idle gap (FRONTEND-S). For
-    // explicit request-start providers that budget starts at dispatch (#533).
+    // explicit request-start providers that budget starts at dispatch (#533),
+    // inside the response ceiling from invocation, so a provider that never
+    // reports dispatch still cannot hang the decision. Only the first report
+    // counts, and none can arm a budget once the call has settled. An expired
+    // budget aborts the attempt's signal, so no request is dispatched later.
     let onRequestStart!: () => void
     const dispatched = new Promise<void>((resolve) => (onRequestStart = resolve))
-    const decision = await withTimeout(
-      provider.decideNextAction!(context, { ...callOptions, onRequestStart }),
-      this.firstChunkTimeoutMs,
-      'ReAct decision timed out',
-      provider.decisionStreamLifecycle === 'explicit-request-start' ? dispatched : undefined
-    )
+    let decision: ReActDecision
+    try {
+      decision = await withTimeout(
+        withTimeout(
+          provider.decideNextAction!(context, {
+            signal: controller.signal,
+            onRequestStart
+          }),
+          this.firstChunkTimeoutMs,
+          DECISION_TIMED_OUT,
+          provider.decisionStreamLifecycle === 'explicit-request-start' ? dispatched : undefined
+        ),
+        this.responseTimeoutMs,
+        DECISION_TIMED_OUT
+      )
+    } catch (error) {
+      controller.abort()
+      throw error
+    } finally {
+      unlink()
+    }
     // The non-streaming path knows the whole decision up front (no live stream to
     // grow), so the model's prose IS the step's thought: carry it as the title (the
     // step label). When the model is silent the title is empty, so the step renders
@@ -696,7 +712,8 @@ export abstract class AgentRuntimeBase {
     const exceeded =
       error.retryAfterMs > this.maxCooldownMs
         ? 'too_long'
-        : performance.now() - this.runStarted.get(context)! + waitMs > this.runCooldownDeadlineMs
+        : // Fails closed: a context without a run anchor (NaN) is never admitted.
+          !(performance.now() - context.runStartedAt! + waitMs <= this.runCooldownDeadlineMs)
           ? 'run_limit'
           : undefined
 

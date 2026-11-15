@@ -38,12 +38,18 @@ export type ExecutionContext = {
   // Ordered record of every tool call executed this run (issue #276). Drives the
   // native tool-call message assembly in the decide + synthesize paths.
   toolInvocations: ToolInvocation[]
+  // Runtime-owned monotonic (performance.now) run start anchoring the cooldown
+  // admission deadline (#533), set once at run start. A context without it is
+  // refused every cooldown (fail closed) rather than granted a fresh window.
+  runStartedAt?: number
 }
 
 export type ProviderCallOptions = {
   signal?: AbortSignal
-  // Explicit request-start providers call this immediately before dispatching a
-  // single-shot decision, after any pre-request wait; its budget starts there.
+  // Explicit request-start providers must call this from decideNextAction
+  // immediately before dispatch, after any pre-request wait; the single-shot
+  // budget starts there. A provider that never calls it is bounded only by the
+  // response ceiling (decisionResponseTimeoutMs) from invocation.
   onRequestStart?: () => void
 }
 
@@ -87,7 +93,9 @@ export type DecisionChunk =
 
 export interface ModelProvider {
   // Opt in when streamDecision emits request-start immediately before dispatch,
-  // after any provider-side wait. Legacy providers are timed from invocation.
+  // after any provider-side wait, AND decideNextAction (if implemented) calls
+  // options.onRequestStart at the same point. Legacy providers are timed from
+  // invocation.
   decisionStreamLifecycle?: 'explicit-request-start'
 
   plan(
