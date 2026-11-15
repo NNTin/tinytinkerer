@@ -129,6 +129,8 @@ export const createChatRuntime = (options: {
   stepTimeoutMs?: number
   firstChunkTimeoutMs?: number
   decisionResponseTimeoutMs?: number
+  maxCooldownMs?: number
+  runCooldownDeadlineMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
   finalizeAssistantContent?: AgentAssistantContentFinalizer
   reportError?: RuntimeErrorReporter

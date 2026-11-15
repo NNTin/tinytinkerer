@@ -97,6 +97,9 @@ export const createEdgeFetch = (
       // and unavoidable — not a captured error (TINYTINKERER-FRONTEND-9).
       accept: options?.accept ?? DEFAULT_EDGE_ACCEPT
     }
+    // Last boundary before dispatch (issue #533): a cancellation or deadline
+    // that won while the call was being assembled issues no request at all.
+    options?.signal?.throwIfAborted()
     return fetchWithTelemetry(metadata, init)
   }
 

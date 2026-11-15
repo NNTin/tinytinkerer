@@ -36,8 +36,8 @@ export type ThrottleResult = {
 export class RateLimitQuota {
   private requests: QuotaWindow | null = null
   private tokens: QuotaWindow | null = null
-  private heuristicBackoffMs = 0
-  private lastRateLimitAt = 0
+  // Absolute end of the post-429 backoff (amplified, with jitter applied once).
+  private heuristicUntil = 0
 
   updateFromHeaders(headers: Headers, nowMs = Date.now()): void {
     const limitReq = parseNonNegativeInt(headers, 'x-ratelimit-limit-requests')
@@ -67,13 +67,19 @@ export class RateLimitQuota {
 
   // Call after a confirmed successful response to clear any heuristic backoff.
   clearHeuristicBackoff(): void {
-    this.heuristicBackoffMs = 0
+    this.heuristicUntil = 0
   }
 
-  recordRateLimit(retryAfterMs: number, nowMs = Date.now()): void {
-    this.lastRateLimitAt = nowMs
-    // Amplify slightly to discourage an immediate retry storm
-    this.heuristicBackoffMs = Math.max(this.heuristicBackoffMs, retryAfterMs * 1.1)
+  // Returns the backoff deadline. Amplify slightly and add jitter to discourage
+  // an immediate retry storm. The provider hands this same deadline to the
+  // runtime's cooldown (issue #533), so a retry issued once it has passed is not
+  // throttled again: one window is waited out exactly once.
+  recordRateLimit(retryAfterMs: number, nowMs = Date.now()): number {
+    this.heuristicUntil = Math.max(
+      this.heuristicUntil,
+      Math.ceil(nowMs + retryAfterMs * 1.1 + jitter())
+    )
+    return this.heuristicUntil
   }
 
   checkThrottle(estimatedTokens = 0, nowMs = Date.now()): ThrottleResult {
@@ -118,14 +124,9 @@ export class RateLimitQuota {
   }
 
   private checkHeuristic(nowMs: number): ThrottleResult {
-    if (this.heuristicBackoffMs > 0) {
-      const elapsed = nowMs - this.lastRateLimitAt
-      const remaining = this.heuristicBackoffMs - elapsed
-      if (remaining > 0) {
-        return { shouldThrottle: true, waitMs: remaining + jitter(), reason: 'heuristic' }
-      }
-      this.heuristicBackoffMs = 0
-    }
-    return { shouldThrottle: false, waitMs: 0, reason: 'none' }
+    const remaining = this.heuristicUntil - nowMs
+    return remaining > 0
+      ? { shouldThrottle: true, waitMs: remaining, reason: 'heuristic' }
+      : { shouldThrottle: false, waitMs: 0, reason: 'none' }
   }
 }

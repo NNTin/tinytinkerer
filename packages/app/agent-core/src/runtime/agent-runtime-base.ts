@@ -47,6 +47,11 @@ const normalizeMaxIterations = (value: number | undefined): number =>
     ? DEFAULT_MAX_ITERATIONS
     : Math.max(1, Math.floor(value))
 
+const DECISION_TIMED_OUT = 'ReAct decision timed out'
+
+const bound = (value: number | undefined, fallback: number): number =>
+  value! >= 0 && value! < Infinity ? value! : fallback
+
 export type AgentRuntimeOptions = {
   /**
    * Per-turn step bound. Defaults to {@link DEFAULT_MAX_ITERATIONS}; values below
@@ -64,6 +69,15 @@ export type AgentRuntimeOptions = {
    * dispatch, independent of progress (default 300s). Must be positive and finite.
    * Explicit request-start providers exclude pre-request waits from this budget. */
   decisionResponseTimeoutMs?: number
+  /** Longest single rate-limit/quota cooldown waited out before a retry (default
+   * 300s). Cooldown time precedes dispatch and is excluded from response budgets. */
+  maxCooldownMs?: number
+  /** Run-scoped elapsed deadline for admitting cooldowns (default 900s): a
+   * cooldown whose projected end, measured monotonically from run start, exceeds
+   * it is refused. It is not a whole-run timeout: tools, human input and a
+   * running synthesis stream are not cut. Negative or nonfinite values for
+   * either bound fall back to the default. */
+  runCooldownDeadlineMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
   /**
    * Host-owned rewrite of the composed answer, applied once before
@@ -113,9 +127,13 @@ export type ReActLoopResult = {
   exitReason: ReActLoopExitReason
 }
 
+// Why a cooldown was not waited out: a single wait above maxCooldownMs, one
+// ending past the run's runCooldownDeadlineMs, or cancellation.
+type CooldownStopReason = 'too_long' | 'run_limit' | 'cancelled'
+
 type DecisionLoopControl =
   | { kind: 'decision'; decision: ReActDecision }
-  | { kind: 'stop'; reason: 'too_long' | 'cancelled' }
+  | { kind: 'stop'; reason: CooldownStopReason }
 
 // Upper bound on a tool-result note. Tool output is arbitrary and can be large
 // (a full web-search result set, a code-exec payload, an MCP response). The note
@@ -172,6 +190,8 @@ export abstract class AgentRuntimeBase {
   protected readonly stepTimeoutMs: number
   protected readonly firstChunkTimeoutMs: number
   protected readonly responseTimeoutMs: number
+  protected readonly maxCooldownMs: number
+  protected readonly runCooldownDeadlineMs: number
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly finalizeAssistantContent: AssistantContentFinalizer | undefined
   protected readonly reportError: RuntimeErrorReporter
@@ -197,6 +217,8 @@ export abstract class AgentRuntimeBase {
     const responseTimeoutMs = options.decisionResponseTimeoutMs ?? 300_000
     this.responseTimeoutMs =
       Number.isFinite(responseTimeoutMs) && responseTimeoutMs > 0 ? responseTimeoutMs : 300_000
+    this.maxCooldownMs = bound(options.maxCooldownMs, MAX_AUTO_RETRY_AFTER_MS)
+    this.runCooldownDeadlineMs = bound(options.runCooldownDeadlineMs, 900_000)
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
     this.finalizeAssistantContent = options.finalizeAssistantContent
@@ -219,7 +241,8 @@ export abstract class AgentRuntimeBase {
       plan: { complexity: 'low', steps: [] },
       notes: [],
       toolResults: {},
-      toolInvocations: []
+      toolInvocations: [],
+      runStartedAt: performance.now()
     }
   }
 
@@ -353,11 +376,11 @@ export abstract class AgentRuntimeBase {
         if (!isRateLimitError(error)) {
           throw error
         }
-        const outcome = yield* this.awaitRateLimitRetry(error, callOptions.signal)
+        const outcome = yield* this.awaitRateLimitRetry(error, callOptions.signal, context)
         if (outcome.retry) {
           continue
         }
-        // Cooldown too long or wait cancelled: stop deciding and let the run wind
+        // Cooldown beyond a bound or wait cancelled: stop deciding and let the run wind
         // down. This is not a real `final` decision, so the caller can stop the
         // sub-loop without counting the current step as successfully completed.
         return { kind: 'stop', reason: outcome.reason }
@@ -379,6 +402,19 @@ export abstract class AgentRuntimeBase {
     const { provider } = this
     const thoughtStepId = createStepId()
     const parentField = parentStepId ? { parentStepId } : {}
+    // Each attempt's own signal: the user's abort and (below) its deadlines
+    // cancel the request, so no provider dispatches after either.
+    const controller = new AbortController()
+    const userSignal = callOptions.signal
+    const onUserAbort = () => controller.abort()
+    const unlink = () => userSignal?.removeEventListener('abort', onUserAbort)
+    if (userSignal) {
+      if (userSignal.aborted) {
+        controller.abort()
+      } else {
+        userSignal.addEventListener('abort', onUserAbort, { once: true })
+      }
+    }
 
     if (provider.streamDecision) {
       yield createEvent('agent.step.started', {
@@ -388,21 +424,10 @@ export abstract class AgentRuntimeBase {
         title: 'Thinking…'
       })
 
-      // Response timing begins at dispatch for lifecycle-aware providers. The
-      // explicit start is extensible to pre-request quota waiting (#533); legacy
-      // providers retain timing from invocation. Progress is internal, never a
-      // visible thought, and cannot extend the absolute response ceiling.
-      const controller = new AbortController()
-      const userSignal = callOptions.signal
-      const onUserAbort = () => controller.abort()
-      if (userSignal) {
-        if (userSignal.aborted) {
-          controller.abort()
-        } else {
-          userSignal.addEventListener('abort', onUserAbort, { once: true })
-        }
-      }
-
+      // Response timing begins at dispatch for lifecycle-aware providers, after
+      // any pre-request quota wait (#533); legacy providers retain timing from
+      // invocation. Progress is internal, never a visible thought, and cannot
+      // extend the absolute response ceiling.
       let timeout: DecisionTimeoutDiagnostics | undefined
       let startedAt: number | undefined
       let model: string | undefined
@@ -487,9 +512,7 @@ export abstract class AgentRuntimeBase {
       } catch (error) {
         // The provider can throw or end on abort. Both paths produce the same
         // typed timeout; other failures (including user abort/429) pass through.
-        const failure = timeout
-          ? new RuntimeTimeoutError('ReAct decision timed out', timeout)
-          : error
+        const failure = timeout ? new RuntimeTimeoutError(DECISION_TIMED_OUT, timeout) : error
         yield createEvent('agent.step.failed', {
           stepId: thoughtStepId,
           error: failure instanceof Error ? failure.message : 'ReAct decision failed'
@@ -497,9 +520,7 @@ export abstract class AgentRuntimeBase {
         throw failure
       } finally {
         clearTimeout(timer)
-        if (userSignal && !userSignal.aborted) {
-          userSignal.removeEventListener('abort', onUserAbort)
-        }
+        unlink()
       }
 
       // The decision resolves at end-of-stream, so carry its kind on the completed
@@ -520,12 +541,35 @@ export abstract class AgentRuntimeBase {
 
     // Non-streaming decisions wait for the whole model response in one shot, so
     // they get the same generous reasoning-model budget as a streaming first
-    // chunk rather than the short inter-chunk idle gap (FRONTEND-S).
-    const decision = await withTimeout(
-      provider.decideNextAction!(context, callOptions),
-      this.firstChunkTimeoutMs,
-      'ReAct decision timed out'
-    )
+    // chunk rather than the short inter-chunk idle gap (FRONTEND-S). For
+    // explicit request-start providers that budget starts at dispatch (#533),
+    // inside the response ceiling from invocation, so a provider that never
+    // reports dispatch still cannot hang the decision. Only the first report
+    // counts, and none can arm a budget once the call has settled. An expired
+    // budget aborts the attempt's signal, so no request is dispatched later.
+    let onRequestStart!: () => void
+    const dispatched = new Promise<void>((resolve) => (onRequestStart = resolve))
+    let decision: ReActDecision
+    try {
+      decision = await withTimeout(
+        withTimeout(
+          provider.decideNextAction!(context, {
+            signal: controller.signal,
+            onRequestStart
+          }),
+          this.firstChunkTimeoutMs,
+          DECISION_TIMED_OUT,
+          provider.decisionStreamLifecycle === 'explicit-request-start' ? dispatched : undefined
+        ),
+        this.responseTimeoutMs,
+        DECISION_TIMED_OUT
+      )
+    } catch (error) {
+      controller.abort()
+      throw error
+    } finally {
+      unlink()
+    }
     // The non-streaming path knows the whole decision up front (no live stream to
     // grow), so the model's prose IS the step's thought: carry it as the title (the
     // step label). When the model is silent the title is empty, so the step renders
@@ -649,28 +693,38 @@ export abstract class AgentRuntimeBase {
   }
 
   // Emits the rate-limit lifecycle events for a RateLimitError and, when the
-  // cooldown is short enough to auto-retry, waits it out. Returns whether the
-  // caller should retry; on giving up it reports why (the cooldown was too long
-  // or the wait was cancelled) so the caller can choose its own terminal
-  // handling. Shared by synthesis and ReAct decisions so every rate-limited call
-  // funnels through the same cooldown/retry behaviour.
+  // cooldown fits both its own cap and the run's deadline, waits it out.
+  // Returns whether the caller should retry; on giving up it reports why (a
+  // bound was exceeded or the wait was cancelled) so the caller can choose its
+  // own terminal handling. Shared by synthesis and ReAct decisions, including
+  // provider quota waits raised before dispatch (#533), so every rate-limited
+  // call funnels through the same cooldown/retry behaviour, outside every
+  // response timer.
   protected async *awaitRateLimitRetry(
     error: RateLimitError,
-    signal: AbortSignal | undefined
-  ): AsyncGenerator<
-    ChatEvent,
-    { retry: true } | { retry: false; reason: 'too_long' | 'cancelled' }
-  > {
-    const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS
+    signal: AbortSignal | undefined,
+    context: ExecutionContext
+  ): AsyncGenerator<ChatEvent, { retry: true } | { retry: false; reason: CooldownStopReason }> {
+    // The wait actually performed, until the protocol's retryAt (an invalid one
+    // waits 0). Its projected end is the run's monotonic elapsed time so far,
+    // model and tool time included, plus that wait.
+    const waitMs = Math.max(0, Date.parse(error.retryAt) - Date.now() || 0)
+    const exceeded =
+      error.retryAfterMs > this.maxCooldownMs
+        ? 'too_long'
+        : // Fails closed: a context without a run anchor (NaN) is never admitted.
+          !(performance.now() - context.runStartedAt! + waitMs <= this.runCooldownDeadlineMs)
+          ? 'run_limit'
+          : undefined
 
-    if (!autoRetry) {
+    if (exceeded) {
       yield createEvent('rate.limit.cancelled', {
         retryAfterMs: error.retryAfterMs,
         retryAt: error.retryAt,
         message: error.message,
-        reason: 'too_long'
+        reason: exceeded
       })
-      return { retry: false, reason: 'too_long' }
+      return { retry: false, reason: exceeded }
     }
 
     yield createEvent('rate.limit.waiting', {
@@ -680,7 +734,7 @@ export abstract class AgentRuntimeBase {
       autoRetry: true
     })
 
-    const elapsed = await this.waitUntil(error.retryAt, signal)
+    const elapsed = await this.waitFor(waitMs, signal)
     if (!elapsed) {
       yield createEvent('rate.limit.cancelled', {
         retryAfterMs: error.retryAfterMs,
@@ -775,7 +829,7 @@ export abstract class AgentRuntimeBase {
           })
         }
 
-        const outcome = yield* this.awaitRateLimitRetry(error, signal)
+        const outcome = yield* this.awaitRateLimitRetry(error, signal, context)
         if (outcome.retry) {
           continue
         }
@@ -790,7 +844,7 @@ export abstract class AgentRuntimeBase {
           session.replace(
             cancelled
               ? 'Retry cancelled.'
-              : 'The model service is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
+              : 'The model service is rate limited. Please try again later.'
           )
         )
         return
@@ -837,13 +891,10 @@ export abstract class AgentRuntimeBase {
     }
   }
 
-  protected waitUntil(retryAt: string, signal: AbortSignal | undefined): Promise<boolean> {
+  protected waitFor(timeoutMs: number, signal: AbortSignal | undefined): Promise<boolean> {
     if (signal?.aborted) {
       return Promise.resolve(false)
     }
-
-    const retryAtMs = Date.parse(retryAt)
-    const timeoutMs = Number.isNaN(retryAtMs) ? 0 : Math.max(0, retryAtMs - Date.now())
 
     return new Promise((resolve) => {
       const cleanup = () => {
