@@ -42,6 +42,9 @@ export type ExecutionContext = {
 
 export type ProviderCallOptions = {
   signal?: AbortSignal
+  // Explicit request-start providers call this immediately before dispatching a
+  // single-shot decision, after any pre-request wait; its budget starts there.
+  onRequestStart?: () => void
 }
 
 // A single piece of the synthesized response stream. `content` chunks build the

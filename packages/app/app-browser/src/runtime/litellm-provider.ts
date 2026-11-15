@@ -232,6 +232,8 @@ export class LiteLLMProvider implements ModelProvider {
     const token = this.options.getToken?.()
     const model = this.options.getModel?.() ?? DEFAULT_MODEL
     const tools = this.options.allToolDescriptors ?? []
+    // Dispatch follows synchronously: the single-shot budget starts here.
+    options?.onRequestStart?.()
     try {
       return await llmDecideNextAction(
         context,

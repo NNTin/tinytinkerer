@@ -57,7 +57,10 @@ explicit pre-request phase, shared by streamed and single-shot decisions and syn
 `LiteLLMProvider` checks its quota tracker before every model request:
 
 - Pacing of at most one second (a nearly spent window) is slept inline. It can be aborted
-  and comes before `request-start`, so it starts no response clock.
+  and comes before dispatch, so it starts no response clock. Streamed decisions are timed
+  from `request-start`. Single-shot decisions are timed from `ProviderCallOptions.onRequestStart`,
+  which explicit request-start providers call immediately before dispatch; their whole
+  `firstChunkTimeoutMs` budget starts there. Legacy providers remain timed from invocation.
 - A longer request-quota, token-quota or post-429 backoff wait is raised as a
   `RateLimitError` before any request. The runtime's existing cooldown handles it like a
   429: `rate.limit.waiting` (the cooldown banner), an abortable wait outside every response
@@ -76,19 +79,28 @@ explicit pre-request phase, shared by streamed and single-shot decisions and syn
 Malformed or missing reset values fall back to the 60-second renewal window, and an expired
 reset does not wait. Quota headers are read from synthesis responses, as before.
 
-| Option             | Default   | Bound                                         |
-| ------------------ | --------- | --------------------------------------------- |
-| `maxCooldownMs`    | `300_000` | Longest single cooldown waited before a retry |
-| `maxRunCooldownMs` | `600_000` | Total cooldown waited in one run, all retries |
+| Option                  | Default   | Bound                                                   |
+| ----------------------- | --------- | ------------------------------------------------------- |
+| `maxCooldownMs`         | `300_000` | Longest single cooldown waited before a retry           |
+| `runCooldownDeadlineMs` | `900_000` | Elapsed run time by which an admitted cooldown must end |
 
-Negative or nonfinite values fall back to the defaults. When a bound is exceeded, the run
-emits `rate.limit.cancelled` with `reason: 'too_long'` (single wait) or `'run_limit'`
-(per-run total) and does not retry. Decisions stop; synthesis is also bounded and ends with
+Negative or nonfinite values fall back to the defaults. `runCooldownDeadlineMs` is anchored
+once per run, when its context is created, on the monotonic clock. That single deadline is
+shared by every decision attempt, retry, Hybrid sub-loop and synthesis attempt. A cooldown
+is admitted only if the time the run has already spent (model and tool time included) plus
+the wait it will actually perform, until the protocol `retryAt`, ends by the deadline.
+Wall-clock changes cannot extend this budget. The deadline governs **cooldown admission
+only**; it is not a whole-run timeout. Tools, permission/human-input waits and a synthesis
+stream already running are not cut by it. Inline pacing is separate from it and still
+abortable.
+
+When a bound is exceeded, the run emits `rate.limit.cancelled` with `reason: 'too_long'`
+(single wait above `maxCooldownMs`) or `'run_limit'` (would end past the run deadline). It
+then neither waits nor issues a later request. Decisions stop; synthesis is also bounded and ends with
 a rate-limited answer instead of making a request. A user abort reports `'cancelled'`. These
 outcomes are never a `RuntimeTimeoutError`. Completed tool observations and their events
 stay in the run while it waits. Persistent checkpoints and explicit resume belong to
-[#531](https://github.com/NNTin/tinytinkerer/issues/531). The single-shot decision budget
-still contains the optional sub-second pacing.
+[#531](https://github.com/NNTin/tinytinkerer/issues/531).
 
 `packages/app/app-browser/tests/quota-cooldown.test.ts` exercises the real HTTP → SSE →
 provider → adapter → ReAct/Hybrid/Plan-Execute chain with fake time. The tested mechanism

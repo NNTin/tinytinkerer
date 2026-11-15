@@ -70,9 +70,12 @@ export type AgentRuntimeOptions = {
   /** Longest single rate-limit/quota cooldown waited out before a retry (default
    * 300s). Cooldown time precedes dispatch and is excluded from response budgets. */
   maxCooldownMs?: number
-  /** Total cooldown waiting allowed per run, across every retry (default 600s).
-   * Negative or nonfinite values for either bound fall back to the default. */
-  maxRunCooldownMs?: number
+  /** Run-scoped elapsed deadline for admitting cooldowns (default 900s): a
+   * cooldown whose projected end, measured monotonically from run start, exceeds
+   * it is refused. It is not a whole-run timeout: tools, human input and a
+   * running synthesis stream are not cut. Negative or nonfinite values for
+   * either bound fall back to the default. */
+  runCooldownDeadlineMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
   /**
    * Host-owned rewrite of the composed answer, applied once before
@@ -122,8 +125,8 @@ export type ReActLoopResult = {
   exitReason: ReActLoopExitReason
 }
 
-// Why a cooldown was not waited out: a single wait above maxCooldownMs, the
-// run's cumulative maxRunCooldownMs, or cancellation.
+// Why a cooldown was not waited out: a single wait above maxCooldownMs, one
+// ending past the run's runCooldownDeadlineMs, or cancellation.
 type CooldownStopReason = 'too_long' | 'run_limit' | 'cancelled'
 
 type DecisionLoopControl =
@@ -186,9 +189,9 @@ export abstract class AgentRuntimeBase {
   protected readonly firstChunkTimeoutMs: number
   protected readonly responseTimeoutMs: number
   protected readonly maxCooldownMs: number
-  protected readonly maxRunCooldownMs: number
-  // Cooldown already waited per run, keyed by the run's context.
-  private readonly cooldownWaited = new WeakMap<ExecutionContext, number>()
+  protected readonly runCooldownDeadlineMs: number
+  // Monotonic start of each run, keyed by its context: anchors cooldown admission.
+  private readonly runStarted = new WeakMap<ExecutionContext, number>()
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly finalizeAssistantContent: AssistantContentFinalizer | undefined
   protected readonly reportError: RuntimeErrorReporter
@@ -215,7 +218,7 @@ export abstract class AgentRuntimeBase {
     this.responseTimeoutMs =
       Number.isFinite(responseTimeoutMs) && responseTimeoutMs > 0 ? responseTimeoutMs : 300_000
     this.maxCooldownMs = bound(options.maxCooldownMs, MAX_AUTO_RETRY_AFTER_MS)
-    this.maxRunCooldownMs = bound(options.maxRunCooldownMs, 600_000)
+    this.runCooldownDeadlineMs = bound(options.runCooldownDeadlineMs, 900_000)
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
     this.finalizeAssistantContent = options.finalizeAssistantContent
@@ -232,7 +235,7 @@ export abstract class AgentRuntimeBase {
   abstract run(prompt: string, options?: RunOptions): AsyncGenerator<ChatEvent>
 
   protected createContext(prompt: string, history: ConversationMessage[]): ExecutionContext {
-    return {
+    const context: ExecutionContext = {
       prompt,
       history,
       plan: { complexity: 'low', steps: [] },
@@ -240,6 +243,8 @@ export abstract class AgentRuntimeBase {
       toolResults: {},
       toolInvocations: []
     }
+    this.runStarted.set(context, performance.now())
+    return context
   }
 
   // Terminal error handling shared by every strategy: an aborted run ends
@@ -539,11 +544,15 @@ export abstract class AgentRuntimeBase {
 
     // Non-streaming decisions wait for the whole model response in one shot, so
     // they get the same generous reasoning-model budget as a streaming first
-    // chunk rather than the short inter-chunk idle gap (FRONTEND-S).
+    // chunk rather than the short inter-chunk idle gap (FRONTEND-S). For
+    // explicit request-start providers that budget starts at dispatch (#533).
+    let onRequestStart!: () => void
+    const dispatched = new Promise<void>((resolve) => (onRequestStart = resolve))
     const decision = await withTimeout(
-      provider.decideNextAction!(context, callOptions),
+      provider.decideNextAction!(context, { ...callOptions, onRequestStart }),
       this.firstChunkTimeoutMs,
-      'ReAct decision timed out'
+      'ReAct decision timed out',
+      provider.decisionStreamLifecycle === 'explicit-request-start' ? dispatched : undefined
     )
     // The non-streaming path knows the whole decision up front (no live stream to
     // grow), so the model's prose IS the step's thought: carry it as the title (the
@@ -668,7 +677,7 @@ export abstract class AgentRuntimeBase {
   }
 
   // Emits the rate-limit lifecycle events for a RateLimitError and, when the
-  // cooldown fits both its own and the run's cumulative bound, waits it out.
+  // cooldown fits both its own cap and the run's deadline, waits it out.
   // Returns whether the caller should retry; on giving up it reports why (a
   // bound was exceeded or the wait was cancelled) so the caller can choose its
   // own terminal handling. Shared by synthesis and ReAct decisions, including
@@ -680,11 +689,14 @@ export abstract class AgentRuntimeBase {
     signal: AbortSignal | undefined,
     context: ExecutionContext
   ): AsyncGenerator<ChatEvent, { retry: true } | { retry: false; reason: CooldownStopReason }> {
-    const waited = (this.cooldownWaited.get(context) ?? 0) + error.retryAfterMs
+    // The wait actually performed, until the protocol's retryAt (an invalid one
+    // waits 0). Its projected end is the run's monotonic elapsed time so far,
+    // model and tool time included, plus that wait.
+    const waitMs = Math.max(0, Date.parse(error.retryAt) - Date.now() || 0)
     const exceeded =
       error.retryAfterMs > this.maxCooldownMs
         ? 'too_long'
-        : waited > this.maxRunCooldownMs
+        : performance.now() - this.runStarted.get(context)! + waitMs > this.runCooldownDeadlineMs
           ? 'run_limit'
           : undefined
 
@@ -697,7 +709,6 @@ export abstract class AgentRuntimeBase {
       })
       return { retry: false, reason: exceeded }
     }
-    this.cooldownWaited.set(context, waited)
 
     yield createEvent('rate.limit.waiting', {
       retryAfterMs: error.retryAfterMs,
@@ -706,7 +717,7 @@ export abstract class AgentRuntimeBase {
       autoRetry: true
     })
 
-    const elapsed = await this.waitUntil(error.retryAt, signal)
+    const elapsed = await this.waitFor(waitMs, signal)
     if (!elapsed) {
       yield createEvent('rate.limit.cancelled', {
         retryAfterMs: error.retryAfterMs,
@@ -816,7 +827,7 @@ export abstract class AgentRuntimeBase {
           session.replace(
             cancelled
               ? 'Retry cancelled.'
-              : 'The model service is rate limited beyond the cooldown limit. Please try again later.'
+              : 'The model service is rate limited. Please try again later.'
           )
         )
         return
@@ -863,13 +874,10 @@ export abstract class AgentRuntimeBase {
     }
   }
 
-  protected waitUntil(retryAt: string, signal: AbortSignal | undefined): Promise<boolean> {
+  protected waitFor(timeoutMs: number, signal: AbortSignal | undefined): Promise<boolean> {
     if (signal?.aborted) {
       return Promise.resolve(false)
     }
-
-    const retryAtMs = Date.parse(retryAt)
-    const timeoutMs = Number.isNaN(retryAtMs) ? 0 : Math.max(0, retryAtMs - Date.now())
 
     return new Promise((resolve) => {
       const cleanup = () => {

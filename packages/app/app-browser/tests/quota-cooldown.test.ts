@@ -71,6 +71,16 @@ const requestQuota = (reset: string) => ({
   'x-ratelimit-reset-requests': reset
 })
 const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms)
+// A single-shot request that only ends when its signal aborts.
+const hang: Handler = (init) =>
+  new Promise((_resolve, reject) =>
+    init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+  )
+const softPacing = {
+  'x-ratelimit-limit-requests': '100',
+  'x-ratelimit-remaining-requests': '1',
+  'x-ratelimit-reset-requests': '60'
+}
 
 type Handler = (init: RequestInit) => Response | Promise<Response>
 type Kind = 'decision' | 'synthesis' | 'plan'
@@ -140,6 +150,7 @@ const setup = (options: SetupOptions = {}) => {
   // The single-shot path: the real provider's methods without streamDecision.
   const provider: ModelProvider = options.nonStreamed
     ? {
+        decisionStreamLifecycle: real.decisionStreamLifecycle,
         plan: real.plan.bind(real),
         execute: real.execute.bind(real),
         synthesize: real.synthesize.bind(real),
@@ -394,7 +405,7 @@ describe('pre-request quota cooldown (#533)', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('honours configured cooldown and total-run bounds', async () => {
+  it('honours the configured per-wait cap and run cooldown deadline', async () => {
     const tight = setup({ runtime: { maxCooldownMs: 100_000 } })
     await tight.prime(requestQuota('120'))
     const first = tight.start()
@@ -402,7 +413,7 @@ describe('pre-request quota cooldown (#533)', () => {
     await first.done
     expect(tight.of(first.events, 'rate.limit.cancelled')[0]?.payload.reason).toBe('too_long')
 
-    const run = setup({ runtime: { maxRunCooldownMs: 100_000 } })
+    const run = setup({ runtime: { runCooldownDeadlineMs: 100_000 } })
     await run.prime(requestQuota('120'))
     const second = run.start()
     await tick()
@@ -509,11 +520,7 @@ describe('pre-request quota cooldown (#533)', () => {
 
   it('aborts sub-second pacing inline without dispatching', async () => {
     const f = setup()
-    await f.prime({
-      'x-ratelimit-limit-requests': '100',
-      'x-ratelimit-remaining-requests': '1',
-      'x-ratelimit-reset-requests': '60'
-    })
+    await f.prime(softPacing)
     const turn = f.start()
     await tick(10)
     expect(f.of(turn.events, 'rate.limit.waiting')).toEqual([])
@@ -524,4 +531,95 @@ describe('pre-request quota cooldown (#533)', () => {
     await tick(5_000)
     expect(f.fetch).not.toHaveBeenCalled()
   })
+
+  it('starts the single-shot budget at dispatch, after inline pacing', async () => {
+    const f = setup({ nonStreamed: true })
+    await f.prime(softPacing)
+    f.queues.decision.push(hang)
+    const turn = f.start()
+    await tick(1_000)
+    expect(f.count('decision')).toBe(1)
+    const paced = f.dispatches[0]!.at - Date.parse('2026-11-15T00:00:00Z')
+    // The prime turn took no time, so dispatch waited out 450-700ms of pacing.
+    expect(paced).toBeGreaterThanOrEqual(450)
+    expect(paced).toBeLessThanOrEqual(700)
+    await tick(f.dispatches[0]!.at + 89_990 - Date.now())
+    expect(timeouts(f.errors)).toEqual([])
+    await tick(20)
+    await turn.done
+    expect(timeouts(f.errors).map((error) => error.message)).toEqual(['ReAct decision timed out'])
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('cancels a single-shot decision during pacing and at dispatch without a request', async () => {
+    const f = setup({ nonStreamed: true })
+    await f.prime(softPacing)
+    const paced = f.start()
+    await tick(10)
+    paced.controller.abort()
+    await tick()
+    expect(paced.settled()).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+
+    const active: { controller?: AbortController } = {}
+    const g = setup({ nonStreamed: true, onForward: () => active.controller?.abort() })
+    await g.prime(requestQuota('120'))
+    const turn = g.start()
+    active.controller = turn.controller
+    await tick(120_300)
+    await turn.done
+    expect(f.fetch).not.toHaveBeenCalled()
+    expect(g.fetch).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    expect([...f.errors, ...g.errors]).toEqual([])
+  })
+
+  // 100s of healthy model progress, then a completed tool call.
+  const slowAction = (decision: ReturnType<typeof openDecision>) => async () => {
+    for (let second = 0; second < 100; second += 10) {
+      decision.send(delta({ content: `step ${second}` }))
+      await tick(10_000)
+    }
+    decision.send(
+      delta({
+        tool_calls: [
+          {
+            index: 0,
+            id: 'call_0',
+            function: { name: 'mcp_srv_write', arguments: '{"value":"saved"}' }
+          }
+        ]
+      }) +
+        finish('tool_calls') +
+        DONE
+    )
+  }
+
+  for (const rollback of [false, true]) {
+    it(`charges prior run time against the cooldown deadline for decisions and synthesis${rollback ? ' despite a wall-clock rollback' : ''}`, async () => {
+      const f = setup({ runtime: { runCooldownDeadlineMs: 150_000 } })
+      const decision = openDecision()
+      f.queues.decision.push(decision.handler, () => {
+        if (rollback) vi.setSystemTime(Date.now() - 3_600_000)
+        return rateLimited(60_000)
+      })
+      const turn = f.start()
+      await tick()
+      await slowAction(decision)()
+      await turn.done
+
+      // A ~66s cooldown alone fits 150s, but the deadline is anchored at run
+      // start: 100s of model time + 66s > 150s. Synthesis shares that deadline.
+      const reasons = f.of(turn.events, 'rate.limit.cancelled').map((e) => e.payload.reason)
+      const waits = f.of(turn.events, 'rate.limit.waiting')
+      expect(waits).toEqual([])
+      expect(reasons).toEqual(['run_limit', 'run_limit'])
+      expect(f.count('decision')).toBe(2)
+      expect(f.count('synthesis')).toBe(0)
+      expect(f.of(turn.events, 'agent.tool.completed')).toHaveLength(1)
+      expect(f.execute).toHaveBeenCalledTimes(1)
+      expect(timeouts(f.errors)).toEqual([])
+      expect(vi.getTimerCount()).toBe(0)
+    })
+  }
 })
