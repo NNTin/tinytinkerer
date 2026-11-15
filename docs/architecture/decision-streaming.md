@@ -35,7 +35,8 @@ Cancellation of a valid but unfinished call does not execute it.
 | `stepTimeoutMs`             | `15_000`                     | Each meaningful response fragment after the first |
 | `decisionResponseTimeoutMs` | `300_000`                    | Dispatch; never reset by progress                 |
 
-The response ceiling covers both streamed prose and argument assembly. Nonpositive or
+The response ceiling covers both streamed prose and argument assembly. One scheduler uses
+monotonic elapsed time to enforce the earlier of the idle/first-response and absolute deadlines. Nonpositive or
 nonfinite ceiling values fall back to 300 seconds, rather than disabling the bound. Thus
 healthy tool-only generation can exceed 90 seconds while continuing to make progress, but
 endless fragments cannot hold a decision open indefinitely. Transport/upstream deadlines may

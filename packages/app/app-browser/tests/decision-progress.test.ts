@@ -335,6 +335,41 @@ for (const strategy of ['react', 'hybrid'] as const) {
       }
     )
 
+    it('enforces a shorter absolute ceiling while still waiting for first response', async () => {
+      const f = await setup(strategy, { decisionResponseTimeoutMs: 20_000 })
+      await tick(20_000)
+      await f.run
+      expect((f.errors[0] as RuntimeTimeoutError).diagnostics).toEqual({
+        cause: 'response_ceiling',
+        lastPhase: 'request_started',
+        elapsedMs: 20_000,
+        budgetMs: 20_000,
+        model: MODEL
+      })
+      expect(f.execute).not.toHaveBeenCalled()
+    })
+
+    it('keeps the absolute ceiling fixed when wall time moves backwards', async () => {
+      const f = await setup(strategy, { decisionResponseTimeoutMs: 25_000 })
+      f.send(call('{"value":"', 'mcp_srv_write'))
+      await tick()
+      await tick(10_000)
+      vi.setSystemTime(Date.now() - 60_000)
+      f.send(call('a'))
+      await tick()
+      await tick(10_000)
+      f.send(call('a'))
+      await tick()
+      await tick(5_000)
+      await f.run
+      expect((f.errors[0] as RuntimeTimeoutError).diagnostics).toMatchObject({
+        cause: 'response_ceiling',
+        elapsedMs: 25_000,
+        budgetMs: 25_000
+      })
+      expect(f.execute).not.toHaveBeenCalled()
+    })
+
     it('enforces the finite response ceiling despite continuous argument progress', async () => {
       const f = await setup(strategy, { decisionResponseTimeoutMs: 25_000 })
       f.send(call('{"value":"', 'mcp_srv_write'))

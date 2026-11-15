@@ -135,39 +135,18 @@ export const createChatRuntime = (options: {
   hooks?: readonly AgentHookContribution[]
   hookTimeoutMs?: number
 }): ChatRuntime => {
+  // Separate composition inputs; forward the shared typed runtime options
+  // without a second per-field copy that can omit new timing contracts.
+  const { provider, tools, agentType, ...runtimeOptions } = options
   const registry = new ToolRegistry()
-  for (const tool of options.tools ?? []) {
+  for (const tool of tools ?? []) {
     registry.register(tool)
   }
 
-  const runtimeOptions = {
-    ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
-    ...(options.maxToolCallsPerStep !== undefined
-      ? { maxToolCallsPerStep: options.maxToolCallsPerStep }
-      : {}),
-    ...(options.toolTimeoutMs !== undefined ? { toolTimeoutMs: options.toolTimeoutMs } : {}),
-    ...(options.stepTimeoutMs !== undefined ? { stepTimeoutMs: options.stepTimeoutMs } : {}),
-    ...(options.firstChunkTimeoutMs !== undefined
-      ? { firstChunkTimeoutMs: options.firstChunkTimeoutMs }
-      : {}),
-    ...(options.decisionResponseTimeoutMs !== undefined
-      ? { decisionResponseTimeoutMs: options.decisionResponseTimeoutMs }
-      : {}),
-    ...(options.createAssistantContentSession
-      ? { createAssistantContentSession: options.createAssistantContentSession }
-      : {}),
-    ...(options.finalizeAssistantContent
-      ? { finalizeAssistantContent: options.finalizeAssistantContent }
-      : {}),
-    ...(options.reportError ? { reportError: options.reportError } : {}),
-    ...(options.hooks ? { hooks: options.hooks } : {}),
-    ...(options.hookTimeoutMs !== undefined ? { hookTimeoutMs: options.hookTimeoutMs } : {})
-  }
-
-  const adaptedProvider = createProviderAdapter(options.provider)
+  const adaptedProvider = createProviderAdapter(provider)
 
   const runtime: AgentRuntimeBase = (() => {
-    switch (options.agentType) {
+    switch (agentType) {
       case 'react':
         return new ReActRuntime(adaptedProvider, registry, runtimeOptions)
       case 'hybrid':

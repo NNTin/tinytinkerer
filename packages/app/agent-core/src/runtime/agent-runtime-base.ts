@@ -171,7 +171,7 @@ export abstract class AgentRuntimeBase {
   protected readonly toolTimeoutMs: number
   protected readonly stepTimeoutMs: number
   protected readonly firstChunkTimeoutMs: number
-  protected readonly decisionResponseTimeoutMs: number
+  protected readonly responseTimeoutMs: number
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly finalizeAssistantContent: AssistantContentFinalizer | undefined
   protected readonly reportError: RuntimeErrorReporter
@@ -194,12 +194,9 @@ export abstract class AgentRuntimeBase {
     // 90s gives gpt-5-class models room to first token while staying under the
     // edge's 120s upstream backstop, so the frontend stays the authority.
     this.firstChunkTimeoutMs = options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 90_000)
-    this.decisionResponseTimeoutMs =
-      options.decisionResponseTimeoutMs !== undefined &&
-      Number.isFinite(options.decisionResponseTimeoutMs) &&
-      options.decisionResponseTimeoutMs > 0
-        ? options.decisionResponseTimeoutMs
-        : 300_000
+    const responseTimeoutMs = options.decisionResponseTimeoutMs ?? 300_000
+    this.responseTimeoutMs =
+      Number.isFinite(responseTimeoutMs) && responseTimeoutMs > 0 ? responseTimeoutMs : 300_000
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
     this.finalizeAssistantContent = options.finalizeAssistantContent
@@ -409,45 +406,42 @@ export abstract class AgentRuntimeBase {
       let timeout: DecisionTimeoutDiagnostics | undefined
       let startedAt: number | undefined
       let model: string | undefined
-      let firstResponse = true
       let assemblingArguments = false
       let lastPhase: DecisionTimeoutDiagnostics['lastPhase'] = 'request_started'
       let timer: ReturnType<typeof setTimeout> | undefined
-      let ceiling: ReturnType<typeof setTimeout> | undefined
-      const disarm = () => {
-        clearTimeout(timer)
-        timer = undefined
-      }
-      const expire = (cause: DecisionTimeoutDiagnostics['cause'], budgetMs: number) => {
-        if (timeout || controller.signal.aborted) return
-        timeout = {
-          cause,
-          lastPhase,
-          elapsedMs: Date.now() - startedAt!,
-          budgetMs,
-          ...(model ? { model } : {})
-        }
-        controller.abort()
-      }
+      const responseBudget = this.responseTimeoutMs
+      // One timer schedules the earlier deadline. A monotonic clock keeps the
+      // absolute response ceiling fixed even when wall time changes.
       const arm = () => {
-        disarm()
-        const budget = firstResponse ? this.firstChunkTimeoutMs : this.stepTimeoutMs
+        clearTimeout(timer)
+        const remaining = responseBudget - (performance.now() - startedAt!)
+        const firstResponse = lastPhase === 'request_started'
+        const idleBudget = firstResponse ? this.firstChunkTimeoutMs : this.stepTimeoutMs
+        const ceiling = lastPhase === 'decision' || remaining <= idleBudget
         timer = setTimeout(
-          () =>
-            expire(
-              firstResponse ? 'first_response' : assemblingArguments ? 'argument_assembly' : 'idle',
-              budget
-            ),
-          budget
+          () => {
+            if (controller.signal.aborted) return
+            timeout = {
+              cause: ceiling
+                ? 'response_ceiling'
+                : firstResponse
+                  ? 'first_response'
+                  : assemblingArguments
+                    ? 'argument_assembly'
+                    : 'idle',
+              lastPhase,
+              elapsedMs: performance.now() - startedAt!,
+              budgetMs: ceiling ? responseBudget : idleBudget,
+              ...(model ? { model } : {})
+            }
+            controller.abort()
+          },
+          ceiling ? remaining : idleBudget
         )
       }
       const start = () => {
         if (startedAt !== undefined) return
-        startedAt = Date.now()
-        ceiling = setTimeout(
-          () => expire('response_ceiling', this.decisionResponseTimeoutMs),
-          this.decisionResponseTimeoutMs
-        )
+        startedAt = performance.now()
         arm()
       }
 
@@ -464,63 +458,48 @@ export abstract class AgentRuntimeBase {
             case 'request-start':
               model ??= chunk.model
               start()
-              break
+              continue
             case 'progress':
-              start()
-              firstResponse = false
               lastPhase = chunk.source
               if (chunk.source === 'tool_call') assemblingArguments = true
-              arm()
               break
             case 'thought':
-              if (chunk.text && chunk.text !== thought) {
-                start()
-                firstResponse = false
-                // Legacy providers have no source-tagged progress.
-                if (lastPhase === 'request_started') lastPhase = 'content'
-                arm()
-                thought = chunk.text
-                yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
-              }
+              if (!chunk.text || chunk.text === thought) continue
+              // Legacy providers have no source-tagged progress.
+              if (lastPhase === 'request_started') lastPhase = 'content'
+              thought = chunk.text
               break
             case 'decision':
+              start()
               decision = chunk.decision
               lastPhase = 'decision'
-              disarm()
-              break
+              arm()
+              continue
+          }
+          start()
+          arm()
+          if (chunk.kind === 'thought') {
+            yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
           }
         }
-        if (!timeout) controller.signal.throwIfAborted()
-        if (!timeout && !decision) throw new Error('ReAct decision stream ended without a decision')
+        controller.signal.throwIfAborted()
+        if (!decision) throw new Error('ReAct decision stream ended without a decision')
       } catch (error) {
-        // A timeout-induced abort may surface as a thrown error; suppress it so
-        // the timeout is reported uniformly below. Any other error fails this
-        // think step (so the timeline has no dangling open step) before
-        // propagating — nextDecision decides whether to retry, e.g. on a rate
-        // limit.
-        if (!timeout) {
-          yield createEvent('agent.step.failed', {
-            stepId: thoughtStepId,
-            error: error instanceof Error ? error.message : 'ReAct decision failed'
-          })
-          throw error
-        }
+        // The provider can throw or end on abort. Both paths produce the same
+        // typed timeout; other failures (including user abort/429) pass through.
+        const failure = timeout
+          ? new RuntimeTimeoutError('ReAct decision timed out', timeout)
+          : error
+        yield createEvent('agent.step.failed', {
+          stepId: thoughtStepId,
+          error: failure instanceof Error ? failure.message : 'ReAct decision failed'
+        })
+        throw failure
       } finally {
-        disarm()
-        clearTimeout(ceiling)
+        clearTimeout(timer)
         if (userSignal && !userSignal.aborted) {
           userSignal.removeEventListener('abort', onUserAbort)
         }
-      }
-
-      if (timeout) {
-        yield createEvent('agent.step.failed', {
-          stepId: thoughtStepId,
-          error: 'ReAct decision timed out'
-        })
-        // Typed so the terminal handler reports it as a warning, not a hard
-        // error: a slow model is degraded, not a crash (FRONTEND-S).
-        throw new RuntimeTimeoutError('ReAct decision timed out', timeout)
       }
 
       // The decision resolves at end-of-stream, so carry its kind on the completed
@@ -529,7 +508,7 @@ export abstract class AgentRuntimeBase {
       // (the step label), so emit it as the summary — always, even empty, so a
       // silent tool-call turn clears the live "Thinking…" placeholder and the step
       // renders as just the decision badge (issue #276).
-      const resolved = decision!
+      const resolved = decision
       yield createEvent('agent.step.completed', {
         stepId: thoughtStepId,
         summary: thought,
