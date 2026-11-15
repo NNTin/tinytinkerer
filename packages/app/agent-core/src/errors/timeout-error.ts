@@ -1,6 +1,6 @@
 // A terminal runtime timeout: a single-shot model call (the planner, a
 // non-streaming ReAct decision, an execution step) or a streaming decision's
-// first/idle wait did not produce output within its budget. Modelled as its own
+// first/idle wait or absolute response ceiling exceeded its budget. Modelled as its own
 // error type for two reasons:
 //
 //   * The host's telemetry sink classifies it as a *warning* rather than a hard
@@ -11,8 +11,19 @@
 //     visible to spot a misbehaving model/route (TINYTINKERER-FRONTEND-S).
 //   * It is NOT an AbortError, so the terminal handler still reports it. An
 //     AbortError is the user cancelling and is deliberately never reported.
+export type DecisionTimeoutDiagnostics = {
+  cause: 'first_response' | 'argument_assembly' | 'idle' | 'response_ceiling'
+  lastPhase: 'request_started' | 'content' | 'reasoning' | 'tool_call' | 'decision'
+  elapsedMs: number
+  budgetMs: number
+  model?: string
+}
+
 export class RuntimeTimeoutError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly diagnostics?: DecisionTimeoutDiagnostics
+  ) {
     super(message)
     this.name = 'RuntimeTimeoutError'
   }

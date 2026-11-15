@@ -98,6 +98,7 @@ const SYNTHESIZE_ACCEPT: AcceptedOutcome = {
 }
 
 export class LiteLLMProvider implements ModelProvider {
+  readonly decisionStreamLifecycle = 'explicit-request-start' as const
   private readonly quota = new RateLimitQuota()
   // canSendPrompt gates the UI so only one synthesis runs at a time.
   private synthesizing = false

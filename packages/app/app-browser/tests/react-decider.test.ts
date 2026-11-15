@@ -285,6 +285,31 @@ const makeSseEdgeFetch = (lines: string[], status = 200): ModelsChatFetch =>
   )
 
 describe('streamDecision (native tool calling)', () => {
+  it('appends identical name fragments when they are not repeated complete metadata', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"a","arguments":"{"}}]}}]}',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"a","arguments":"}"}}]}}]}',
+      'data: [DONE]',
+      ''
+    ])
+    const chunks = []
+    for await (const chunk of streamDecision(
+      baseContext(),
+      [{ ...descriptor, id: 'aa' }],
+      'm',
+      edgeFetch
+    ))
+      chunks.push(chunk)
+    expect(chunks.filter((chunk) => chunk.kind === 'progress')).toEqual([
+      { kind: 'progress', source: 'tool_call' },
+      { kind: 'progress', source: 'tool_call' }
+    ])
+    expect(chunks.at(-1)).toEqual({
+      kind: 'decision',
+      decision: { kind: 'action', toolId: 'aa', input: {} }
+    })
+  })
+
   it('streams reasoning as growing thoughts then yields an action from accumulated tool-call deltas', async () => {
     // The tool call's id/name arrive first, then its arguments accumulate across
     // two deltas — exercising the cross-delta accumulator.
@@ -388,6 +413,7 @@ describe('streamDecision (native tool calling)', () => {
   it('throws when the streaming response is not ok', async () => {
     const edgeFetch = makeSseEdgeFetch(['data: [DONE]'], 503)
     const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
+    expect((await iterator.next()).value).toEqual({ kind: 'request-start', model: 'm' })
     await expect(iterator.next()).rejects.toThrow('ReAct decision request failed (503)')
   })
 
@@ -398,6 +424,7 @@ describe('streamDecision (native tool calling)', () => {
         new Response(null, { status: 200, headers: { 'content-type': 'text/event-stream' } })
       )
     const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
+    expect((await iterator.next()).value).toEqual({ kind: 'request-start', model: 'm' })
     await expect(iterator.next()).rejects.toThrow('ReAct decision stream missing response body')
   })
 
@@ -408,6 +435,7 @@ describe('streamDecision (native tool calling)', () => {
       429
     )
     const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
+    expect((await iterator.next()).value).toEqual({ kind: 'request-start', model: 'm' })
     const error = await iterator.next().catch((err: unknown) => err)
     expect(isRateLimitError(error)).toBe(true)
     if (!isRateLimitError(error)) throw new Error('Expected a RateLimitError')

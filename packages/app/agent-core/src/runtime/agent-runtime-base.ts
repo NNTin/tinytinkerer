@@ -14,7 +14,7 @@ import type {
   ModelProvider,
   ProviderCallOptions
 } from '../types'
-import { RuntimeTimeoutError } from '../errors/timeout-error'
+import { RuntimeTimeoutError, type DecisionTimeoutDiagnostics } from '../errors/timeout-error'
 import { runToolBeforeExecuteHooks } from '../plugins/hooks'
 import type { AgentHookContribution } from '../plugins/types'
 import { ToolRegistry } from '../tools/registry'
@@ -56,21 +56,14 @@ export type AgentRuntimeOptions = {
   maxToolCallsPerStep?: number
   toolTimeoutMs?: number
   stepTimeoutMs?: number
-  /**
-   * Whole-response budget for a single-shot model call: the wait for the first
-   * chunk of a streaming decision, the entire non-streaming decision, and the
-   * planner / execution-step calls. Reasoning models (e.g. `openai/gpt-5` via
-   * LiteLLM) routinely take much longer to produce a full response — or even
-   * their first chunk — than the inter-chunk `stepTimeoutMs` idle gap, so reusing
-   * the idle timeout here killed slow-but-healthy reasoning calls before they
-   * finished: the streaming decision was cut off before its first token
-   * (TINYTINKERER-FRONTEND-S) and the planner tripped "Planner timed out". This
-   * larger budget governs those whole-response waits; `stepTimeoutMs` still
-   * applies only as the idle gap between chunks once a stream is flowing. Kept
-   * below the edge's upstream backstop (120s) so the frontend budget — not the
-   * edge — is the user-facing authority and never aborts a healthy stream first.
-   */
+  /** First meaningful streamed response (default >=90s), or entire single-shot
+   * decision/planner call. Subsequent meaningful progress uses stepTimeoutMs
+   * (default 15s). Neither SSE heartbeats nor metadata reset these budgets. */
   firstChunkTimeoutMs?: number
+  /** Absolute streamed-decision response/argument-assembly ceiling, from request
+   * dispatch, independent of progress (default 300s). Must be positive and finite.
+   * Explicit request-start providers exclude pre-request waits from this budget. */
+  decisionResponseTimeoutMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
   /**
    * Host-owned rewrite of the composed answer, applied once before
@@ -178,6 +171,7 @@ export abstract class AgentRuntimeBase {
   protected readonly toolTimeoutMs: number
   protected readonly stepTimeoutMs: number
   protected readonly firstChunkTimeoutMs: number
+  protected readonly responseTimeoutMs: number
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly finalizeAssistantContent: AssistantContentFinalizer | undefined
   protected readonly reportError: RuntimeErrorReporter
@@ -200,6 +194,9 @@ export abstract class AgentRuntimeBase {
     // 90s gives gpt-5-class models room to first token while staying under the
     // edge's 120s upstream backstop, so the frontend stays the authority.
     this.firstChunkTimeoutMs = options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 90_000)
+    const responseTimeoutMs = options.decisionResponseTimeoutMs ?? 300_000
+    this.responseTimeoutMs =
+      Number.isFinite(responseTimeoutMs) && responseTimeoutMs > 0 ? responseTimeoutMs : 300_000
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
     this.finalizeAssistantContent = options.finalizeAssistantContent
@@ -391,16 +388,10 @@ export abstract class AgentRuntimeBase {
         title: 'Thinking…'
       })
 
-      // Enforce a per-step timeout. A stalled stream aborts the underlying
-      // request and fails the step rather than hanging the loop. The timer is an
-      // idle timeout: it resets on every chunk, so a steadily-streaming thought
-      // is never cut off. The FIRST chunk gets a larger budget
-      // (firstChunkTimeoutMs) because slow reasoning models — e.g. `openai/gpt-5`
-      // via LiteLLM — take much longer to emit their first token than the
-      // inter-chunk gap; reusing the idle gap here killed healthy streams before
-      // they started (TINYTINKERER-FRONTEND-S). Subsequent chunks use the shorter
-      // stepTimeoutMs idle gap. The controller is linked to the caller's signal
-      // so a user abort still cancels the request.
+      // Response timing begins at dispatch for lifecycle-aware providers. The
+      // explicit start is extensible to pre-request quota waiting (#533); legacy
+      // providers retain timing from invocation. Progress is internal, never a
+      // visible thought, and cannot extend the absolute response ceiling.
       const controller = new AbortController()
       const userSignal = callOptions.signal
       const onUserAbort = () => controller.abort()
@@ -412,70 +403,103 @@ export abstract class AgentRuntimeBase {
         }
       }
 
-      let timedOut = false
-      let firstChunk = true
+      let timeout: DecisionTimeoutDiagnostics | undefined
+      let startedAt: number | undefined
+      let model: string | undefined
+      let assemblingArguments = false
+      let lastPhase: DecisionTimeoutDiagnostics['lastPhase'] = 'request_started'
       let timer: ReturnType<typeof setTimeout> | undefined
-      const disarm = () => {
-        if (timer) {
-          clearTimeout(timer)
-          timer = undefined
-        }
-      }
+      const responseBudget = this.responseTimeoutMs
+      // One timer schedules the earlier deadline. A monotonic clock keeps the
+      // absolute response ceiling fixed even when wall time changes.
       const arm = () => {
-        disarm()
-        const budget = firstChunk ? this.firstChunkTimeoutMs : this.stepTimeoutMs
-        timer = setTimeout(() => {
-          timedOut = true
-          controller.abort()
-        }, budget)
+        clearTimeout(timer)
+        const remaining = responseBudget - (performance.now() - startedAt!)
+        const firstResponse = lastPhase === 'request_started'
+        const idleBudget = firstResponse ? this.firstChunkTimeoutMs : this.stepTimeoutMs
+        const ceiling = lastPhase === 'decision' || remaining <= idleBudget
+        timer = setTimeout(
+          () => {
+            if (controller.signal.aborted) return
+            timeout = {
+              cause: ceiling
+                ? 'response_ceiling'
+                : firstResponse
+                  ? 'first_response'
+                  : assemblingArguments
+                    ? 'argument_assembly'
+                    : 'idle',
+              lastPhase,
+              elapsedMs: performance.now() - startedAt!,
+              budgetMs: ceiling ? responseBudget : idleBudget,
+              ...(model ? { model } : {})
+            }
+            controller.abort()
+          },
+          ceiling ? remaining : idleBudget
+        )
+      }
+      const start = () => {
+        if (startedAt !== undefined) return
+        startedAt = performance.now()
+        arm()
       }
 
       let thought = ''
       let decision: ReActDecision | undefined
       try {
-        arm()
+        if (provider.decisionStreamLifecycle !== 'explicit-request-start') start()
         for await (const chunk of provider.streamDecision(context, {
           ...callOptions,
           signal: controller.signal
         })) {
-          disarm()
-          firstChunk = false
-          if (chunk.kind === 'thought') {
-            thought = chunk.text
-            yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
-          } else {
-            decision = chunk.decision
+          if (controller.signal.aborted) break
+          switch (chunk.kind) {
+            case 'request-start':
+              model ??= chunk.model
+              start()
+              continue
+            case 'progress':
+              lastPhase = chunk.source
+              if (chunk.source === 'tool_call') assemblingArguments = true
+              break
+            case 'thought':
+              if (!chunk.text || chunk.text === thought) continue
+              // Legacy providers have no source-tagged progress.
+              if (lastPhase === 'request_started') lastPhase = 'content'
+              thought = chunk.text
+              break
+            case 'decision':
+              start()
+              decision = chunk.decision
+              lastPhase = 'decision'
+              arm()
+              continue
           }
+          start()
           arm()
+          if (chunk.kind === 'thought') {
+            yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
+          }
         }
+        controller.signal.throwIfAborted()
+        if (!decision) throw new Error('ReAct decision stream ended without a decision')
       } catch (error) {
-        // A timeout-induced abort may surface as a thrown error; suppress it so
-        // the timeout is reported uniformly below. Any other error fails this
-        // think step (so the timeline has no dangling open step) before
-        // propagating — nextDecision decides whether to retry, e.g. on a rate
-        // limit.
-        if (!timedOut) {
-          yield createEvent('agent.step.failed', {
-            stepId: thoughtStepId,
-            error: error instanceof Error ? error.message : 'ReAct decision failed'
-          })
-          throw error
-        }
+        // The provider can throw or end on abort. Both paths produce the same
+        // typed timeout; other failures (including user abort/429) pass through.
+        const failure = timeout
+          ? new RuntimeTimeoutError('ReAct decision timed out', timeout)
+          : error
+        yield createEvent('agent.step.failed', {
+          stepId: thoughtStepId,
+          error: failure instanceof Error ? failure.message : 'ReAct decision failed'
+        })
+        throw failure
       } finally {
-        disarm()
+        clearTimeout(timer)
         if (userSignal && !userSignal.aborted) {
           userSignal.removeEventListener('abort', onUserAbort)
         }
-      }
-
-      if (timedOut) {
-        yield createEvent('agent.step.failed', {
-          stepId: thoughtStepId,
-          error: 'ReAct decision timed out'
-        })
-        // Typed so the terminal handler reports it as a warning, not a hard
-        // error: a slow model is degraded, not a crash (FRONTEND-S).
-        throw new RuntimeTimeoutError('ReAct decision timed out')
       }
 
       // The decision resolves at end-of-stream, so carry its kind on the completed
@@ -484,7 +508,7 @@ export abstract class AgentRuntimeBase {
       // (the step label), so emit it as the summary — always, even empty, so a
       // silent tool-call turn clears the live "Thinking…" placeholder and the step
       // renders as just the decision badge (issue #276).
-      const resolved = decision ?? { kind: 'final' }
+      const resolved = decision
       yield createEvent('agent.step.completed', {
         stepId: thoughtStepId,
         summary: thought,
@@ -711,7 +735,7 @@ export abstract class AgentRuntimeBase {
             })
             continue
           }
-          if (chunk.kind === 'tool_call') {
+          if (chunk.kind === 'tool_call' || chunk.kind === 'finish') {
             // Synthesis advertises `tool_choice: 'none'`, so the model should not
             // emit tool calls here; ignore any defensively rather than appending
             // them to the answer (issue #276).

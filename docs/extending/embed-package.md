@@ -56,6 +56,33 @@ The package follows semver. Releases are published from this repository's releas
 every release, as `0.x` prereleases under the `next` dist-tag, for example `0.1.0-next.12`. Pin
 an exact version.
 
+A merge into `develop` is source integration only. After the reviewed runtime fixes from
+[tinytinkerer #530](https://github.com/NNTin/tinytinkerer/issues/530) merge and CI passes, a
+maintainer can publish a prerelease directly from merged `develop` using the supported dispatch:
+
+```bash
+gh workflow run publish-embed.yml --repo NNTin/tinytinkerer --ref develop -f channel=next
+```
+
+**Publish embed package** (`publish-embed.yml`) checks out the selected dispatch ref, builds
+the embed, publishes `0.1.0-next.<workflow run number>` to GitHub Packages under `next`, then
+installs, typechecks and builds a fresh consumer against that published version. There is no
+branch guard restricting this manual `next` dispatch to `main`, and no deployment step in the
+workflow. Main promotion is unnecessary for this prerelease; the separate **Release PR**
+(`release-pr.yml`) `develop` → `main` promotion also triggers production deployment workflows
+and remains a distinct release decision. Do not choose `channel: latest` for this prerelease.
+
+Record the successful publish workflow's **head SHA**, resolved version and registry acceptance
+result. The version cannot be predicted from a source PR. Consumers must pin that exact version
+and update their lockfiles; a source merge or local tarball is not an upgrade. A future reviewed
+`main` release still publishes `next` automatically through the workflow's push trigger.
+
+At this handoff CanFactory pins `0.1.0-next.4`. Its package/lockfile upgrade is owned by
+[CanFactory #170](https://github.com/NNTin/CanFactory/issues/170), after the sequential runtime
+follow-ups. See [decision streaming](../architecture/decision-streaming.md) for the timing contract.
+Runtime type consumers must handle the internal `request-start` / `progress` decision variants
+and explicitly ignore the new `SynthesisChunk` `finish` variant when composing answer text.
+
 A breaking change to `createBrowserApp`, `ChatApp`'s props, `AppToolGroup` or `Tool` bumps the
 major version. Anything not exported from the entry below is internal and can change in any
 release.

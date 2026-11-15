@@ -590,9 +590,33 @@ export const createRuntime = (options: {
     // filter these out of the hard-error signal.
     reportError: (error) => {
       const timedOut = isRuntimeTimeoutError(error)
+      const diagnostic = timedOut ? error.diagnostics : undefined
       captureTelemetryException(error, {
         level: timedOut ? 'warning' : 'error',
-        tags: { source: 'agent-runtime', ...(timedOut ? { reason: 'timeout' } : {}) },
+        tags: {
+          source: 'agent-runtime',
+          ...(timedOut ? { reason: 'timeout' } : {}),
+          ...(diagnostic
+            ? {
+                timeout_cause: diagnostic.cause,
+                response_phase: diagnostic.lastPhase,
+                model: diagnostic.model
+              }
+            : {})
+        },
+        ...(diagnostic
+          ? {
+              contexts: {
+                decision_timeout: {
+                  cause: diagnostic.cause,
+                  lastPhase: diagnostic.lastPhase,
+                  elapsedMs: diagnostic.elapsedMs,
+                  budgetMs: diagnostic.budgetMs,
+                  model: diagnostic.model
+                }
+              }
+            }
+          : {}),
         fingerprint: ['agent-runtime', fingerprintMessage(error.message)]
       })
     },
