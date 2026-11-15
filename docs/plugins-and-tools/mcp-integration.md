@@ -68,7 +68,7 @@ Use ReAct for iterative MCP work.
 
 ### 5 — Tool call
 
-When the model calls an MCP tool, `createMcpTool`'s `execute` function calls `POST /api/mcp/call` on the edge. The edge opens a fresh MCP connection, calls the named tool, and returns a normalized result. The result goes back to the model unmodified as the `tool` message, and the loop continues.
+When the model calls an MCP tool, `createMcpTool`'s `execute` function calls `POST /api/mcp/call` on the edge. The edge opens a fresh MCP connection, calls the named tool, and returns a normalized result. The model receives that result as the `tool` message, without the response's duplicate `text` field (see [What the model sees](#what-the-model-sees)), and the loop continues.
 
 A failed call becomes an observation as well. The model sees the error and can correct its arguments on the next step.
 
@@ -256,6 +256,36 @@ Request body: `{ url, bearerToken?, toolName, arguments }`
   "isError": false
 }
 ```
+
+`raw` is the server's `CallToolResult` exactly as returned: every content block in order, `structuredContent`, `isError` and `_meta`. Two fields are derived from it, both in `buildMcpCallResponse` (`@tinytinkerer/contracts`), which the route returns:
+
+- `text` is the `type: "text"` blocks of `raw.content`, in order, joined with `\n`. It is a copy of data already in `raw`.
+- `isError` is `raw.isError === true`.
+
+#### What the model sees
+
+The browser keeps this response unchanged as the call's result. The activity panel, the context inspector and an app's `finalizeAnswer` (`AppToolResultRecord.output`) all get the full response, `text` included.
+
+The model gets a projection of it instead. Sending the whole response would send every text payload twice, once in `text` and again in `raw.content[].text`. A large KiPrint guide or footprint would then be repeated, escaped, in every later decision and in the synthesis. It would also be cut sooner by the 32,000-character limit per message. So the `tool` message carries the response without `text`:
+
+```json
+{
+  "serverName": "My Weather Server",
+  "toolName": "get_current_weather",
+  "raw": { "content": [{ "type": "text", "text": "Clear sky, 22°C in Berlin." }] },
+  "isError": false
+}
+```
+
+The rest is sent as it was. That covers the server and tool names, `isError` and all of `raw`, including several text blocks, `structuredContent` (even when a server also serializes it as text), and image and resource content.
+
+`text` is dropped only when the browser can establish that the response came from this envelope:
+
+- **Origin, not shape.** The call must be a host-registered MCP tool. Its invocation's `source` must be `{ kind: 'mcp', groupId }`, stamped at registration from the tool registry. The tool id must be `mcp:<groupId>:<toolName>` for the `toolName` in the response. An app or plugin tool is sent unchanged, even if its output looks like this envelope or has a `text` key.
+- **The alias is checked on every result.** `text` must equal the joined text blocks of `raw.content`. If it differs, for example from another edge version or a non-array `content`, the full response is sent.
+- **One call at a time.** Separate calls are never compared or deduplicated, even when they return the same text.
+
+The projection is computed from the recorded call each time messages are assembled. All three request paths share that one step (`toolInvocationsToMessages`): the streaming and non-streaming decisions and the synthesis. Nothing is stored in projected form. Replaying a run, or restoring calls saved with their `source`, therefore produces the same messages. A saved call without `source` is sent in full, as before this change. Any store of calls, such as a checkpoint, must keep the full result and its `source`, not the projection.
 
 ---
 

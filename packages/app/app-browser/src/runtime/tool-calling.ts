@@ -2,6 +2,7 @@ import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '@tinytinkere
 import { mediaRefFor, partitionToolResultMedia } from '@tinytinkerer/contracts'
 import type { ToolInvocation } from '@tinytinkerer/app-core'
 import type { PlannerToolDescriptor } from './mcp-planner'
+import { modelFacingToolOutput } from './mcp-result-projection'
 
 // Native OpenAI tool calling (issue #276). The runtime's tool ids — e.g.
 // `mcp:<serverId>:<toolName>` — contain characters (`:`) that OpenAI rejects in a
@@ -120,14 +121,22 @@ export const parseCompleteToolCallArguments = (value: string): Record<string, un
 // inline image data; the UI resolves the same `mediaRef` back to the actual
 // image via its own media registry, keyed off the same partitioned array (the
 // enumeration index below MUST line up with that array, not the raw output).
-const serializeToolResult = (outcome: ToolInvocation['outcome'], callId: string): string => {
+//
+// Before either, an MCP result is reduced to its model-facing projection
+// (issue #532): the edge envelope's `text` alias of `raw.content` is dropped so
+// a text payload is sent once. `modelFacingToolOutput` owns when that is safe;
+// for every other output it is the identity, and an MCP envelope never carries
+// a top-level `media` array, so the media enumeration is unaffected.
+const serializeToolResult = (invocation: ToolInvocation): string => {
+  const { outcome, callId } = invocation
   if (!outcome.ok) {
     return `Error: ${outcome.error}`
   }
   try {
-    const { rest, media } = partitionToolResultMedia(outcome.output)
+    const output = modelFacingToolOutput(invocation, outcome.output)
+    const { rest, media } = partitionToolResultMedia(output)
     if (media.length === 0) {
-      return JSON.stringify(outcome.output) ?? String(outcome.output)
+      return JSON.stringify(output) ?? String(outcome.output)
     }
     const modelOutput = {
       ...(rest as Record<string, unknown>),
@@ -169,7 +178,7 @@ export const toolInvocationsToMessages = (
     messages.push({
       role: 'tool',
       tool_call_id: invocation.callId,
-      content: serializeToolResult(invocation.outcome, invocation.callId)
+      content: serializeToolResult(invocation)
     })
   }
   return messages

@@ -475,6 +475,32 @@ export const mcpCallResponseSchema = z
 
 export type McpCallResponse = z.infer<typeof mcpCallResponseSchema>
 
+// The `/api/mcp/call` envelope producer (issue #532). The edge route builds its
+// response here so the envelope's one derived field is defined in a single
+// place: `raw` is the server's CallToolResult verbatim (authoritative), and
+// `text` is a convenience ALIAS of it — the `type: 'text'` blocks of
+// `raw.content`, in order, joined with '\n'. Nothing else is derived.
+// `isError` is `raw.isError === true`. A consumer may therefore drop `text`
+// (but nothing in `raw`) without losing information, which is what the
+// browser's model-facing projection does — see `modelFacingToolOutput` in
+// packages/app/app-browser/src/runtime/mcp-result-projection.ts, which
+// re-checks the equality per result rather than trusting it.
+// Edge-only: the browser imports the type, never this function, so it stays
+// out of the browser bundle.
+export const buildMcpCallResponse = (
+  serverName: string,
+  toolName: string,
+  raw: Record<string, unknown>
+): McpCallResponse => ({
+  serverName,
+  toolName,
+  text: (Array.isArray(raw.content) ? (raw.content as Record<string, unknown>[]) : [])
+    .flatMap((item) => (item?.type === 'text' && typeof item.text === 'string' ? [item.text] : []))
+    .join('\n'),
+  raw,
+  isError: raw.isError === true
+})
+
 export const TELEMETRY_HEADERS = {
   appVersion: 'X-App-Version',
   buildHash: 'X-Build-Hash',

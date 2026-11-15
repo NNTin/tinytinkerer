@@ -36,6 +36,7 @@ import {
 import { ModelJsonError } from './model-json'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
 import { buildToolNameMap, toolInvocationsToMessages } from './tool-calling'
+import { modelFacingToolOutput } from './mcp-result-projection'
 import {
   decideNextAction as llmDecideNextAction,
   streamDecision as llmStreamDecision
@@ -44,11 +45,12 @@ import { extractReasoning, parseSseStream, splitInlineThink } from './sse-utils'
 
 const estimateTokens = (context: ExecutionContext): number => {
   // Heuristic only (throttle sizing): include the tool I/O now carried as native
-  // tool-call turns (issue #276) so the estimate tracks what is actually sent.
+  // tool-call turns (issue #276) so the estimate tracks what is actually sent —
+  // the model-facing projection of each result, not its raw envelope (#532).
   const toolText = context.toolInvocations.map((invocation) =>
     JSON.stringify(invocation.input).concat(
       invocation.outcome.ok
-        ? JSON.stringify(invocation.outcome.output ?? '')
+        ? JSON.stringify(modelFacingToolOutput(invocation, invocation.outcome.output) ?? '')
         : invocation.outcome.error
     )
   )

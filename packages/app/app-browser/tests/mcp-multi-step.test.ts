@@ -156,14 +156,17 @@ type ResultData = {
 type ToolResult = { toolName: string; data: ResultData }
 
 // The MCP results the model has seen so far, decoded from the `tool` messages
-// the runtime replays: each is the edge's McpCallResponse, whose `text` is the
-// server's own JSON. An app tool's result has no `text` and is skipped.
+// the runtime replays: each is the edge's McpCallResponse in its model-facing
+// projection (issue #532) — no `text` alias, so the server's own JSON is read
+// from its single `raw.content` text block. An app tool's result has no `raw`
+// and is skipped.
 const readResults = (messages: WireMessage[]): ToolResult[] =>
   messages.flatMap((message) => {
     if (message.role !== 'tool' || !message.content) return []
     const response = JSON.parse(message.content) as Partial<McpCallResponse>
-    return typeof response.text === 'string' && typeof response.toolName === 'string'
-      ? [{ toolName: response.toolName, data: JSON.parse(response.text) as ResultData }]
+    const block = (response.raw as { content?: { text?: unknown }[] } | undefined)?.content?.[0]
+    return typeof block?.text === 'string' && typeof response.toolName === 'string'
+      ? [{ toolName: response.toolName, data: JSON.parse(block.text) as ResultData }]
       : []
   })
 
@@ -358,6 +361,14 @@ describe('multi-step MCP tool calling in one turn (issue #510, T4)', () => {
       .filter((result) => result.toolName === 'check_project')
       .at(-1)
     expect(lastCheck?.data).toEqual({ ok: true, issues: [] })
+
+    // However many results a decision replays, none carries the envelope's
+    // `text` alias again (issue #532).
+    for (const decision of test.decisions) {
+      for (const message of decision.messages.filter((entry) => entry.role === 'tool')) {
+        expect(JSON.parse(message.content ?? '{}')).not.toHaveProperty('text')
+      }
+    }
 
     // Ten tool decisions plus the closing one, then a single synthesis.
     expect(test.decisions).toHaveLength(11)
