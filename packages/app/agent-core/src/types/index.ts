@@ -40,7 +40,7 @@ export type ExecutionContext = {
   toolInvocations: ToolInvocation[]
   // Runtime-owned monotonic (performance.now) run start anchoring the cooldown
   // admission deadline (#533), set once at run start. A context without it is
-  // refused every cooldown (fail closed) rather than granted a fresh window.
+  // refused every cooldown (fail closed) rather than granted a fresh allowance.
   runStartedAt?: number
 }
 
