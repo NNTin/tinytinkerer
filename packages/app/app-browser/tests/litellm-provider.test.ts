@@ -60,6 +60,93 @@ const collect = async (stream: AsyncIterable<SynthesisChunk>): Promise<string> =
 }
 
 describe('LiteLLMProvider', () => {
+  it.each(['', ' \n '])(
+    'preserves completed non-streaming blank tool arguments: %j',
+    async (args) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    finish_reason: 'tool_calls',
+                    message: {
+                      tool_calls: [
+                        {
+                          id: 'call_status',
+                          type: 'function',
+                          function: { name: 'status', arguments: args }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }),
+              { headers: { 'content-type': 'application/json' } }
+            )
+          )
+        )
+      )
+      try {
+        const provider = new LiteLLMProvider({
+          baseUrl: 'https://edge.test',
+          allToolDescriptors: [
+            { id: 'status', description: 'Status', inputSchema: { type: 'object', properties: {} } }
+          ]
+        })
+        await expect(provider.decideNextAction(context)).resolves.toMatchObject({
+          kind: 'action',
+          toolId: 'status',
+          input: {}
+        })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    }
+  )
+
+  it.each(['length', 'content_filter'])(
+    'rejects a non-streaming blank call after %s',
+    async (reason) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    finish_reason: reason,
+                    message: {
+                      tool_calls: [
+                        {
+                          id: 'call_status',
+                          type: 'function',
+                          function: { name: 'status', arguments: '' }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }),
+              { headers: { 'content-type': 'application/json' } }
+            )
+          )
+        )
+      )
+      try {
+        const provider = new LiteLLMProvider({ baseUrl: 'https://edge.test' })
+        await expect(provider.decideNextAction(context)).rejects.toThrow(
+          'without a complete response'
+        )
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    }
+  )
+
   it('returns a low-complexity plan for a plain prompt', async () => {
     const provider = new LiteLLMProvider({ baseUrl: 'http://example.com' })
     const plan = await provider.plan('tell me a joke', [])

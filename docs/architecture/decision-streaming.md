@@ -13,13 +13,16 @@ app-core adapter preserves this capability. Other providers retain timing from i
 - `thought` retains the existing visible accumulated prose. Progress itself emits no chat
   event or repeated thought. Legacy providers can still make progress through thoughts.
 - `decision` is the completed structured choice. Tools execute only after stream completion,
-  complete JSON-object arguments and the registered tool's schema validation.
+  complete JSON-object arguments and the registered tool's schema validation. Completed
+  blank/whitespace-only arguments from gateways are normalized to `{}` for no-argument
+  calls; required parameters still fail registry validation.
 
 The streamed-decider accepts protocol completion (`[DONE]` or a successful finish reason),
 not bare transport EOF. Empty/metadata-only streams, missing names, invalid/non-object JSON,
 truncation and unsuccessful finish reasons fail without executing tools. Calls are assembled
-by index, including fragmented names. Every offered call must be complete; the first indexed
-call supplies the single action, so multiple calls do not create extra side effects.
+by index, including fragmented names. Every offered call must be complete, including unselected siblings: a malformed sibling
+fails the whole decision instead of executing any call. The first indexed call supplies
+the single action, so multiple calls do not create extra side effects.
 Cancellation of a valid but unfinished call does not execute it.
 
 ## Response bounds

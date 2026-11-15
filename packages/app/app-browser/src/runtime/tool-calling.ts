@@ -85,11 +85,15 @@ export const buildToolNameMap = (tools: PlannerToolDescriptor[]): ToolNameMap =>
 export { parseToolCallArguments } from '@tinytinkerer/contracts'
 
 // Native function.arguments is protocol JSON, not free-form model prose. Do
-// not use the prose-recovery parser: it could extract a complete nested object
-// from a truncated outer argument bag, and captures raw input in telemetry.
+// not use the prose-recovery parser: it accepts malformed/prose-wrapped
+// protocol input and captures raw arguments in telemetry.
 // Never turn malformed or truncated arguments into empty input: even a tool
 // with an all-optional schema could otherwise execute an unintended mutation.
 export const parseCompleteToolCallArguments = (value: string): Record<string, unknown> => {
+  // Some gateways omit {} for a no-argument call. This decoder is used only
+  // after protocol completion; the registered schema still rejects missing
+  // required parameters. Nonempty malformed input is never normalized.
+  if (value.trim().length === 0) return {}
   let parsed: unknown
   try {
     parsed = JSON.parse(value)

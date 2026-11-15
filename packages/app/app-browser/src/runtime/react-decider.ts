@@ -178,9 +178,16 @@ export const decideNextAction = async (
 
   const metadata = decisionMetadata(response, model, false)
   const data = await parseJsonWithTelemetry<{
-    choices?: Array<{ message?: { content?: string | null; tool_calls?: ChatToolCall[] } }>
+    choices?: Array<{
+      finish_reason?: string | null
+      message?: { content?: string | null; tool_calls?: ChatToolCall[] }
+    }>
   }>(metadata, response)
-  const message = data.choices?.[0]?.message
+  const choice = data.choices?.[0]
+  if (choice?.finish_reason && !['stop', 'tool_calls'].includes(choice.finish_reason)) {
+    throw new Error('ReAct decision ended without a complete response')
+  }
+  const message = choice?.message
   // A non-reasoning model expresses its rationale as ordinary `content` (not a
   // separate reasoning channel); carry it as the decision's reasoning so the
   // timeline shows the model's "why" for the step (issue #276).

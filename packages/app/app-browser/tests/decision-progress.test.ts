@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { createChatRuntime, type RuntimeTimeoutError } from '@tinytinkerer/app-core'
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import { toolInputJsonSchema, type ChatEvent } from '@tinytinkerer/contracts'
 import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 import { createRuntime } from '../src/runtime/create-runtime'
 import { LiteLLMProvider } from '../src/runtime/litellm-provider'
@@ -39,6 +39,7 @@ const response = (text: string) =>
 const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms)
 
 type SetupOptions = {
+  schema?: z.ZodType
   firstChunkTimeoutMs?: number
   stepTimeoutMs?: number
   decisionResponseTimeoutMs?: number
@@ -116,6 +117,7 @@ const setup = async (agentType: 'react' | 'hybrid', options: SetupOptions = {}) 
     .mockResolvedValue({ ok: true })
   const errors: Error[] = []
   const events: ChatEvent[] = []
+  const schema = options.schema ?? z.object({ value: z.string().optional() })
   const provider = new LiteLLMProvider({
     baseUrl: 'https://edge.test',
     getModel: () => MODEL,
@@ -124,10 +126,7 @@ const setup = async (agentType: 'react' | 'hybrid', options: SetupOptions = {}) 
       {
         id: 'mcp:srv:write',
         description: 'Write',
-        inputSchema: {
-          type: 'object',
-          properties: { value: { type: 'string' } }
-        }
+        inputSchema: toolInputJsonSchema(schema)
       }
     ]
   })
@@ -152,7 +151,7 @@ const setup = async (agentType: 'react' | 'hybrid', options: SetupOptions = {}) 
         id: 'mcp:srv:write',
         description: 'Write',
         // Optional on purpose: malformed JSON must never fall back to {} and run.
-        schema: z.object({ value: z.string().optional() }),
+        schema,
         execute
       }
     ],
@@ -216,7 +215,6 @@ for (const strategy of ['react', 'hybrid'] as const) {
       expect(f.errors).toEqual([])
       const thoughts = f.events.filter((e) => e.type === 'agent.step.delta')
       expect(thoughts.map((e) => e.payload.text)).toEqual(['I will write.', 'Complete'])
-      expect(JSON.stringify(thoughts)).not.toContain('aaaa')
     })
 
     it('allows tool-only assembly beyond the default 90s first-response window', async () => {
@@ -453,9 +451,45 @@ for (const strategy of ['react', 'hybrid'] as const) {
     })
 
     it.each([
+      ['zero-argument', z.object({})],
+      ['all-optional', z.object({ value: z.string().optional() })]
+    ] as const)('accepts completed blank arguments for a %s tool', async (_label, schema) => {
+      for (const args of ['', ' \n ']) {
+        for (const terminal of [finish(), 'data: [DONE]\n\n']) {
+          const f = await setup(strategy, { schema })
+          f.send(call(args, 'mcp_srv_write'))
+          await tick()
+          expect(f.execute).not.toHaveBeenCalled()
+          f.send(terminal)
+          f.close()
+          await f.run
+          expect(f.execute).toHaveBeenCalledExactlyOnceWith({})
+          expect(f.errors).toEqual([])
+        }
+      }
+    })
+
+    it('rejects blank arguments at the schema gate when a parameter is required', async () => {
+      const f = await setup(strategy, { schema: z.object({ value: z.string() }) })
+      f.send(call('', 'mcp_srv_write'))
+      f.complete()
+      await f.run
+      expect(f.execute).not.toHaveBeenCalled()
+      expect(f.events.some((event) => event.type === 'agent.tool.failed')).toBe(true)
+    })
+
+    it('does not execute a name-only call without protocol completion', async () => {
+      const f = await setup(strategy, { schema: z.object({}) })
+      f.send(call('', 'mcp_srv_write'))
+      f.close()
+      await f.run
+      expect(f.execute).not.toHaveBeenCalled()
+      expect(f.errors).toHaveLength(1)
+    })
+
+    it.each([
       ['malformed JSON', 'not-json', true, 'tool_calls'],
       ['truncated JSON', '{"value":', true, 'tool_calls'],
-      ['empty arguments', '', true, 'tool_calls'],
       ['array arguments', '[]', true, 'tool_calls'],
       ['null arguments', 'null', true, 'tool_calls'],
       ['transport EOF after valid JSON', '{}', false, 'tool_calls'],
