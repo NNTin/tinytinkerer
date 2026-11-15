@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import {
+  buildMcpCallResponse,
   edgeErrorResponseSchema,
   mcpCallResponseSchema,
   mcpDiscoveryResultSchema
@@ -302,24 +303,10 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
         arguments: toolArgs
       })
 
-      const isError = callResult.isError === true
-      const contentItems = Array.isArray(callResult.content) ? callResult.content : []
-      const text = contentItems
-        .filter((item): item is { type: 'text'; text: string } => {
-          const candidate = item as Record<string, unknown>
-          return candidate.type === 'text' && typeof candidate.text === 'string'
-        })
-        .map((item) => item.text)
-        .join('\n')
-
+      // `text` is an alias of raw.content's text blocks; see buildMcpCallResponse
+      // for the envelope contract the browser's model projection relies on.
       return c.json(
-        mcpCallResponseSchema.parse({
-          serverName,
-          toolName,
-          text,
-          raw: callResult,
-          isError
-        }),
+        mcpCallResponseSchema.parse(buildMcpCallResponse(serverName, toolName, callResult)),
         200
       )
     } catch (error) {

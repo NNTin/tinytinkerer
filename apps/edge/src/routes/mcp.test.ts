@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildMcpCallResponse,
   edgeErrorResponseSchema,
   mcpCallResponseSchema,
   mcpDiscoveryResultSchema
@@ -504,6 +505,38 @@ describe('POST /api/mcp/call', () => {
     expect(res.status).toBe(200)
     const body = mcpCallResponseSchema.parse(await res.json())
     expect(body.text).toBe('Part 1.\n Part 2.')
+  })
+
+  // Issue #532: the browser's model-facing projection drops `text` only because
+  // the envelope promises it is an alias of raw.content's text blocks. Pin the
+  // route to that producer: `raw` is the CallToolResult verbatim and nothing
+  // else is derived.
+  it('returns exactly the buildMcpCallResponse envelope, with raw verbatim', async () => {
+    const callResult = {
+      content: [
+        { type: 'text', text: '{"guide":"say \\"hi\\""}' },
+        { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+        { type: 'text', text: 'second\nblock' }
+      ],
+      structuredContent: { guide: 'say "hi"' },
+      isError: true,
+      _meta: { trace: 't1' }
+    }
+    mockCallTool.mockResolvedValueOnce(callResult)
+    const res = await post('/api/mcp/call', {
+      url: 'https://mcp.example.com/mcp',
+      toolName: 'plan_guide',
+      arguments: {}
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(buildMcpCallResponse('TestServer', 'plan_guide', callResult))
+    expect(buildMcpCallResponse('TestServer', 'plan_guide', callResult)).toEqual({
+      serverName: 'TestServer',
+      toolName: 'plan_guide',
+      text: '{"guide":"say \\"hi\\""}\nsecond\nblock',
+      raw: callResult,
+      isError: true
+    })
   })
 })
 
