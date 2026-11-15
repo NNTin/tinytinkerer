@@ -72,7 +72,7 @@ export const deriveRunOutcome = (
   const rateLimited = events.some(
     (event) =>
       event.type === 'rate.limit.waiting' ||
-      (event.type === 'rate.limit.cancelled' && event.payload.reason === 'too_long')
+      (event.type === 'rate.limit.cancelled' && event.payload.reason !== 'cancelled')
   )
   if (rateLimited) {
     return 'rate-limited'

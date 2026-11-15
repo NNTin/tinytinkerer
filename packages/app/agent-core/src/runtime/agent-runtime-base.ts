@@ -47,6 +47,9 @@ const normalizeMaxIterations = (value: number | undefined): number =>
     ? DEFAULT_MAX_ITERATIONS
     : Math.max(1, Math.floor(value))
 
+const bound = (value: number | undefined, fallback: number): number =>
+  value! >= 0 && Number.isFinite(value) ? value! : fallback
+
 export type AgentRuntimeOptions = {
   /**
    * Per-turn step bound. Defaults to {@link DEFAULT_MAX_ITERATIONS}; values below
@@ -64,6 +67,12 @@ export type AgentRuntimeOptions = {
    * dispatch, independent of progress (default 300s). Must be positive and finite.
    * Explicit request-start providers exclude pre-request waits from this budget. */
   decisionResponseTimeoutMs?: number
+  /** Longest single rate-limit/quota cooldown waited out before a retry (default
+   * 300s). Cooldown time precedes dispatch and is excluded from response budgets. */
+  maxCooldownMs?: number
+  /** Total cooldown waiting allowed per run, across every retry (default 600s).
+   * Negative or nonfinite values for either bound fall back to the default. */
+  maxRunCooldownMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
   /**
    * Host-owned rewrite of the composed answer, applied once before
@@ -113,9 +122,13 @@ export type ReActLoopResult = {
   exitReason: ReActLoopExitReason
 }
 
+// Why a cooldown was not waited out: a single wait above maxCooldownMs, the
+// run's cumulative maxRunCooldownMs, or cancellation.
+type CooldownStopReason = 'too_long' | 'run_limit' | 'cancelled'
+
 type DecisionLoopControl =
   | { kind: 'decision'; decision: ReActDecision }
-  | { kind: 'stop'; reason: 'too_long' | 'cancelled' }
+  | { kind: 'stop'; reason: CooldownStopReason }
 
 // Upper bound on a tool-result note. Tool output is arbitrary and can be large
 // (a full web-search result set, a code-exec payload, an MCP response). The note
@@ -172,6 +185,10 @@ export abstract class AgentRuntimeBase {
   protected readonly stepTimeoutMs: number
   protected readonly firstChunkTimeoutMs: number
   protected readonly responseTimeoutMs: number
+  protected readonly maxCooldownMs: number
+  protected readonly maxRunCooldownMs: number
+  // Cooldown already waited per run, keyed by the run's context.
+  private readonly cooldownWaited = new WeakMap<ExecutionContext, number>()
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly finalizeAssistantContent: AssistantContentFinalizer | undefined
   protected readonly reportError: RuntimeErrorReporter
@@ -197,6 +214,8 @@ export abstract class AgentRuntimeBase {
     const responseTimeoutMs = options.decisionResponseTimeoutMs ?? 300_000
     this.responseTimeoutMs =
       Number.isFinite(responseTimeoutMs) && responseTimeoutMs > 0 ? responseTimeoutMs : 300_000
+    this.maxCooldownMs = bound(options.maxCooldownMs, MAX_AUTO_RETRY_AFTER_MS)
+    this.maxRunCooldownMs = bound(options.maxRunCooldownMs, 600_000)
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
     this.finalizeAssistantContent = options.finalizeAssistantContent
@@ -353,11 +372,11 @@ export abstract class AgentRuntimeBase {
         if (!isRateLimitError(error)) {
           throw error
         }
-        const outcome = yield* this.awaitRateLimitRetry(error, callOptions.signal)
+        const outcome = yield* this.awaitRateLimitRetry(error, callOptions.signal, context)
         if (outcome.retry) {
           continue
         }
-        // Cooldown too long or wait cancelled: stop deciding and let the run wind
+        // Cooldown beyond a bound or wait cancelled: stop deciding and let the run wind
         // down. This is not a real `final` decision, so the caller can stop the
         // sub-loop without counting the current step as successfully completed.
         return { kind: 'stop', reason: outcome.reason }
@@ -649,29 +668,36 @@ export abstract class AgentRuntimeBase {
   }
 
   // Emits the rate-limit lifecycle events for a RateLimitError and, when the
-  // cooldown is short enough to auto-retry, waits it out. Returns whether the
-  // caller should retry; on giving up it reports why (the cooldown was too long
-  // or the wait was cancelled) so the caller can choose its own terminal
-  // handling. Shared by synthesis and ReAct decisions so every rate-limited call
-  // funnels through the same cooldown/retry behaviour.
+  // cooldown fits both its own and the run's cumulative bound, waits it out.
+  // Returns whether the caller should retry; on giving up it reports why (a
+  // bound was exceeded or the wait was cancelled) so the caller can choose its
+  // own terminal handling. Shared by synthesis and ReAct decisions, including
+  // provider quota waits raised before dispatch (#533), so every rate-limited
+  // call funnels through the same cooldown/retry behaviour, outside every
+  // response timer.
   protected async *awaitRateLimitRetry(
     error: RateLimitError,
-    signal: AbortSignal | undefined
-  ): AsyncGenerator<
-    ChatEvent,
-    { retry: true } | { retry: false; reason: 'too_long' | 'cancelled' }
-  > {
-    const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS
+    signal: AbortSignal | undefined,
+    context: ExecutionContext
+  ): AsyncGenerator<ChatEvent, { retry: true } | { retry: false; reason: CooldownStopReason }> {
+    const waited = (this.cooldownWaited.get(context) ?? 0) + error.retryAfterMs
+    const exceeded =
+      error.retryAfterMs > this.maxCooldownMs
+        ? 'too_long'
+        : waited > this.maxRunCooldownMs
+          ? 'run_limit'
+          : undefined
 
-    if (!autoRetry) {
+    if (exceeded) {
       yield createEvent('rate.limit.cancelled', {
         retryAfterMs: error.retryAfterMs,
         retryAt: error.retryAt,
         message: error.message,
-        reason: 'too_long'
+        reason: exceeded
       })
-      return { retry: false, reason: 'too_long' }
+      return { retry: false, reason: exceeded }
     }
+    this.cooldownWaited.set(context, waited)
 
     yield createEvent('rate.limit.waiting', {
       retryAfterMs: error.retryAfterMs,
@@ -775,7 +801,7 @@ export abstract class AgentRuntimeBase {
           })
         }
 
-        const outcome = yield* this.awaitRateLimitRetry(error, signal)
+        const outcome = yield* this.awaitRateLimitRetry(error, signal, context)
         if (outcome.retry) {
           continue
         }
@@ -790,7 +816,7 @@ export abstract class AgentRuntimeBase {
           session.replace(
             cancelled
               ? 'Retry cancelled.'
-              : 'The model service is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
+              : 'The model service is rate limited beyond the cooldown limit. Please try again later.'
           )
         )
         return

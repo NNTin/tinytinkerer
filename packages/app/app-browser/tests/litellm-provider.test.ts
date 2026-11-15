@@ -214,11 +214,15 @@ describe('LiteLLMProvider', () => {
       getToken: () => 'token'
     })
 
-    await expect(collect(provider.synthesize(context))).rejects.toMatchObject({
-      name: 'RateLimitError',
-      retryAfterMs: 120_000,
-      retryAt
-    } satisfies Partial<RateLimitError>)
+    // The error carries the one effective deadline the runtime waits out: the
+    // upstream window amplified by 1.1 plus jitter (issue #533).
+    const error = (await collect(provider.synthesize(context)).catch(
+      (e: unknown) => e
+    )) as RateLimitError
+    expect(error.name).toBe('RateLimitError')
+    expect(error.retryAfterMs).toBeGreaterThanOrEqual(132_050)
+    expect(error.retryAfterMs).toBeLessThanOrEqual(132_301)
+    expect(Date.parse(error.retryAt)).toBeGreaterThan(Date.parse(retryAt))
 
     vi.unstubAllGlobals()
   })
@@ -462,17 +466,23 @@ describe('LiteLLMProvider', () => {
     } satisfies Partial<RateLimitError>)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
 
-    // Second decision must wait out the recorded backoff before calling the edge
-    // again rather than immediately re-hitting the rate-limited endpoint.
-    const second = provider.decideNextAction(context)
-    const secondAssertion = expect(second).rejects.toMatchObject({
-      name: 'RateLimitError'
-    } satisfies Partial<RateLimitError>)
-    await Promise.resolve()
+    // The second decision raises the recorded backoff as a pre-request cooldown
+    // (issue #533) instead of sleeping inside the timed call or re-hitting the
+    // rate-limited endpoint.
+    const cooldown = (await provider
+      .decideNextAction(context)
+      .catch((e: unknown) => e)) as RateLimitError
+    expect(cooldown).toMatchObject({
+      name: 'RateLimitError',
+      message: 'Waiting out the model rate limit'
+    })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
 
-    await vi.advanceTimersByTimeAsync(200_000)
-    await secondAssertion
+    // Once that one deadline passes the next decision dispatches immediately.
+    vi.setSystemTime(Date.parse(cooldown.retryAt))
+    await expect(provider.decideNextAction(context)).rejects.toMatchObject({
+      name: 'RateLimitError'
+    } satisfies Partial<RateLimitError>)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
 
     vi.useRealTimers()

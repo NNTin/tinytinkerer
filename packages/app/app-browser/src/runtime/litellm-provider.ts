@@ -81,6 +81,9 @@ type LiteLLMProviderOptions = {
   identity?: string
 }
 
+// Pacing at or below this is slept inline; longer waits become runtime cooldowns.
+const MAX_INLINE_PACING_MS = 1_000
+
 // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE path
 // (streamDecision/decideNextAction → react-decider). A fix applied only to
 // DECIDE leaves this one firing the identical 429, so both must accept the same
@@ -117,14 +120,55 @@ export class LiteLLMProvider implements ModelProvider {
     )
   }
 
-  // Wait out any active rate-limit/quota backoff before issuing an edge model
-  // call. Shared by synthesis and the ReAct decision path so a 429 on one stops
-  // the others from retry-spamming the edge (TINYTINKERER-FRONTEND-9).
-  private async applyQuotaThrottle(context: ExecutionContext): Promise<void> {
-    const throttle = this.quota.checkThrottle(estimateTokens(context))
-    if (throttle.shouldThrottle) {
-      await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
+  // The explicit pre-request quota phase (issue #533), shared by synthesis and
+  // both ReAct decision paths so a 429 on one stops the others from
+  // retry-spamming the edge (TINYTINKERER-FRONTEND-9). It runs before any
+  // request, so a wait here is never a model response. Sub-second pacing is
+  // slept inline but stays abortable. A longer quota/backoff wait is raised as
+  // a RateLimitError before dispatch: the runtime's cooldown then waits it out
+  // outside every response timer, visibly, abortably and within its bounds,
+  // and retries once it has passed, when this check lets the request through.
+  private async awaitQuota(context: ExecutionContext, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    const { waitMs, reason } = this.quota.checkThrottle(estimateTokens(context))
+    if (waitMs > MAX_INLINE_PACING_MS) {
+      const retryAt = Math.ceil(Date.now() + waitMs)
+      throw new RateLimitError(
+        reason === 'heuristic'
+          ? 'Waiting out the model rate limit'
+          : `Waiting for the model ${reason === 'token_quota' ? 'token' : 'request'} quota to reset`,
+        { retryAfterMs: Math.ceil(waitMs), retryAt: new Date(retryAt).toISOString() }
+      )
     }
+    if (waitMs > 0) {
+      await new Promise<void>((resolve) => {
+        const onAbort = () => {
+          clearTimeout(timer)
+          resolve()
+        }
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve()
+        }, waitMs)
+        signal?.addEventListener('abort', onAbort, { once: true })
+      })
+      signal?.throwIfAborted()
+    }
+  }
+
+  // Records a 429 and returns it carrying the one effective deadline: the later
+  // of the upstream retryAt and the tracker's amplified, jittered backoff. The
+  // runtime waits until exactly then, so the retry is not throttled again.
+  private rateLimited(error: RateLimitError): RateLimitError {
+    const now = Date.now()
+    const until = Math.max(
+      this.quota.recordRateLimit(error.retryAfterMs, now),
+      Date.parse(error.retryAt) || 0
+    )
+    return new RateLimitError(error.message, {
+      retryAfterMs: until - now,
+      retryAt: new Date(until).toISOString()
+    })
   }
 
   async plan(
@@ -184,8 +228,8 @@ export class LiteLLMProvider implements ModelProvider {
     context: ExecutionContext,
     options?: ProviderCallOptions
   ): Promise<ReActDecision> {
+    await this.awaitQuota(context, options?.signal)
     const token = this.options.getToken?.()
-    await this.applyQuotaThrottle(context)
     const model = this.options.getModel?.() ?? DEFAULT_MODEL
     const tools = this.options.allToolDescriptors ?? []
     try {
@@ -198,8 +242,7 @@ export class LiteLLMProvider implements ModelProvider {
         this.options.appInstructions?.('decision')
       )
     } catch (error) {
-      if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
-      throw error
+      throw error instanceof RateLimitError ? this.rateLimited(error) : error
     }
   }
 
@@ -207,8 +250,9 @@ export class LiteLLMProvider implements ModelProvider {
     context: ExecutionContext,
     options?: ProviderCallOptions
   ): AsyncIterable<DecisionChunk> {
+    // Before request-start, so quota waiting never starts a response clock.
+    await this.awaitQuota(context, options?.signal)
     const token = this.options.getToken?.()
-    await this.applyQuotaThrottle(context)
     const model = this.options.getModel?.() ?? DEFAULT_MODEL
     const tools = this.options.allToolDescriptors ?? []
     try {
@@ -221,8 +265,7 @@ export class LiteLLMProvider implements ModelProvider {
         this.options.appInstructions?.('decision')
       )
     } catch (error) {
-      if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
-      throw error
+      throw error instanceof RateLimitError ? this.rateLimited(error) : error
     }
   }
 
@@ -248,14 +291,8 @@ export class LiteLLMProvider implements ModelProvider {
     context: ExecutionContext,
     options?: ProviderCallOptions
   ): AsyncIterable<SynthesisChunk> {
+    await this.awaitQuota(context, options?.signal)
     const token = this.options.getToken?.()
-    const estimatedTokens = estimateTokens(context)
-    const throttle = this.quota.checkThrottle(estimatedTokens)
-    if (throttle.shouldThrottle) {
-      // Sleep inline for all throttle durations — keeps prevention inside the provider
-      // and avoids misusing the upstream recovery loop.
-      await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
-    }
 
     // Native tool calling (issue #276): feed the model its own tool I/O as native
     // assistant `tool_calls` + `tool` result turns — the SAME message shape the
@@ -308,9 +345,7 @@ export class LiteLLMProvider implements ModelProvider {
     this.quota.updateFromHeaders(response.headers)
 
     if (response.status === 429) {
-      const err = await createRateLimitError(response)
-      this.quota.recordRateLimit(err.retryAfterMs)
-      throw err
+      throw this.rateLimited(await createRateLimitError(response))
     }
 
     if (!response.ok) {

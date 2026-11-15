@@ -101,6 +101,18 @@ describe('RateLimitQuota', () => {
     expect(result.waitMs).toBeGreaterThan(30_000)
   })
 
+  it('returns one jittered backoff deadline that is not throttled again once reached (#533)', () => {
+    const quota = new RateLimitQuota()
+    const nowMs = 1_000_000
+    const until = quota.recordRateLimit(30_000, nowMs)
+    expect(until - nowMs).toBeGreaterThanOrEqual(33_050)
+    expect(until - nowMs).toBeLessThanOrEqual(33_301)
+    expect(quota.checkThrottle(0, nowMs).waitMs).toBe(until - nowMs)
+    expect(quota.checkThrottle(0, until)).toMatchObject({ shouldThrottle: false, reason: 'none' })
+    // A shorter later 429 never shortens the active window.
+    expect(quota.recordRateLimit(1_000, nowMs + 1)).toBe(until)
+  })
+
   it('clears heuristic backoff via clearHeuristicBackoff() after a confirmed successful response', () => {
     const quota = new RateLimitQuota()
     const nowMs = Date.now()

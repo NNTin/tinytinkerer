@@ -395,7 +395,7 @@ export const rateLimitCancelledEventSchema = eventBaseSchema(
   z.object({
     ...rateLimitDetailFields,
     message: z.string(),
-    reason: z.enum(['too_long', 'cancelled'])
+    reason: z.enum(['too_long', 'run_limit', 'cancelled'])
   })
 )
 export const reasoningChunkEventSchema = eventBaseSchema(
