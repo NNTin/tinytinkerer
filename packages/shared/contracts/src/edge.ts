@@ -482,8 +482,9 @@ export type McpCallResponse = z.infer<typeof mcpCallResponseSchema>
 // `raw.content`, in order, joined with '\n'. Nothing else is derived.
 // `isError` is `raw.isError === true`. A consumer may therefore drop `text`
 // (but nothing in `raw`) without losing information, which is what the
-// browser's model-facing projection does — see `projectMcpCallForModel` in
-// app-browser, which re-checks the equality per result rather than trusting it.
+// browser's model-facing projection does — see `modelFacingToolOutput` in
+// packages/app/app-browser/src/runtime/mcp-result-projection.ts, which
+// re-checks the equality per result rather than trusting it.
 // Edge-only: the browser imports the type, never this function, so it stays
 // out of the browser bundle.
 export const buildMcpCallResponse = (
