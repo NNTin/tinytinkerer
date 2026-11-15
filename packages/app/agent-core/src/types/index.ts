@@ -55,8 +55,8 @@ export type ProviderCallOptions = {
 // `tool_call` chunks carry a streamed native tool-call delta (issue #276): the
 // decide path accumulates them by `index` into the chosen tool call, while the
 // synthesis path (which advertises `tool_choice: 'none'`) never sees any and
-// ignores the variant. `id`/`name`/`argumentsDelta` each arrive across one or
-// more deltas, so accumulators must append rather than overwrite.
+// ignores the variant. Name/argument fragments accumulate across deltas; ids
+// and repeated complete names may arrive again as non-progress metadata.
 export type ToolCallChunk = {
   kind: 'tool_call'
   index: number
@@ -70,15 +70,23 @@ export type SynthesisChunk =
   | { kind: 'reasoning'; text: string }
   | { kind: 'usage'; promptTokens: number; completionTokens?: number; totalTokens?: number }
   | ToolCallChunk
+  // Protocol completion, distinct from transport EOF. Synthesis ignores it.
+  | { kind: 'finish'; reason: string }
 
-// A chunk of a streamed ReAct decision: `thought` carries the model's reasoning
-// as it streams (full accumulated text), and `decision` is the final structured
-// choice. Used by the optional streaming decision path.
+// Internal lifecycle shared by ReAct and Hybrid. No partial arguments or tool
+// payloads cross this boundary. Only nonempty content/reasoning or advancing
+// tool name/argument fragments are progress; transport heartbeats are not.
 export type DecisionChunk =
+  | { kind: 'request-start'; model: string }
+  | { kind: 'progress'; source: 'content' | 'reasoning' | 'tool_call' }
   | { kind: 'thought'; text: string }
   | { kind: 'decision'; decision: ReActDecision }
 
 export interface ModelProvider {
+  // Opt in when streamDecision emits request-start immediately before dispatch,
+  // after any provider-side wait. Legacy providers are timed from invocation.
+  decisionStreamLifecycle?: 'explicit-request-start'
+
   plan(
     prompt: string,
     history: ConversationMessage[],
@@ -98,9 +106,9 @@ export interface ModelProvider {
     context: ExecutionContext,
     options?: ProviderCallOptions
   ): Promise<ReActDecision>
-  // Streaming variant of decideNextAction: yields the model's reasoning as it
-  // streams, then the final decision. When present, the ReAct/Hybrid runtimes
-  // prefer it so per-step thoughts render live; otherwise they fall back to
+  // Streaming variant of decideNextAction: internal request/progress lifecycle,
+  // visible accumulated thoughts, then the final decision. ReAct/Hybrid prefer
+  // it so per-step thoughts render live; otherwise they fall back to
   // decideNextAction.
   streamDecision?(
     context: ExecutionContext,

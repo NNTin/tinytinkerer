@@ -56,6 +56,23 @@ The package follows semver. Releases are published from this repository's releas
 every release, as `0.x` prereleases under the `next` dist-tag, for example `0.1.0-next.12`. Pin
 an exact version.
 
+A merge into `develop` is source integration only. To publish the runtime fixes from
+[tinytinkerer #530](https://github.com/NNTin/tinytinkerer/issues/530), after that merge:
+
+1. Run **Release PR** (`release-pr.yml`) to open or refresh the supported `develop` → `main`
+   promotion PR, and complete its review/merge.
+2. The resulting `main` push runs **Publish embed package** (`publish-embed.yml`). It builds
+   the embed and publishes `0.1.0-next.<workflow run number>` to GitHub Packages under `next`,
+   then installs, typechecks and builds a fresh consumer against that published version.
+   If a rerun is needed, dispatch that workflow on the merged `main` with `channel: next`.
+3. Record the successful workflow's **head SHA**, resolved version and registry acceptance
+   result. The version cannot be predicted from a source PR. Consumers must pin that exact
+   version and update their lockfiles; a source merge or local tarball is not an upgrade.
+
+CanFactory currently pins `0.1.0-next.4`. Its package/lockfile upgrade is owned by
+[CanFactory #170](https://github.com/NNTin/CanFactory/issues/170), after the sequential runtime
+follow-ups. See [decision streaming](../decision-streaming.md) for the timing contract.
+
 A breaking change to `createBrowserApp`, `ChatApp`'s props, `AppToolGroup` or `Tool` bumps the
 major version. Anything not exported from the entry below is internal and can change in any
 release.

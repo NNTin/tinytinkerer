@@ -8,7 +8,7 @@ import { parseSseStream, splitInlineThink } from './sse-utils'
 import { composeSystemPrompt } from './system-prompt'
 import {
   buildToolNameMap,
-  parseToolCallArguments,
+  parseCompleteToolCallArguments,
   toolInvocationsToMessages,
   type ToolNameMap
 } from './tool-calling'
@@ -109,15 +109,6 @@ const decisionMetadata = (
   stream
 })
 
-// Turn a chosen native tool call into a ReActDecision. The model addresses tools
-// by their advertised (wire-safe) function name, so map it back to the real tool
-// id; the arguments arrive as a JSON string, parsed into the action input. A tool
-// call whose arguments are not valid JSON is treated as empty input rather than
-// crashing the run — the tool's own schema validation is the real gate. Any prose
-// the model emitted alongside the call (its "why") is carried as `reasoning` —
-// genuine model prose only, omitted when the model is silent (the common native
-// tool-calling case). The timeline shows the model's prose as the step's thought
-// and renders just the decision badge when there is none (issue #276).
 const toActionDecision = (
   toolCall: ChatToolCall,
   names: ToolNameMap,
@@ -125,7 +116,7 @@ const toActionDecision = (
 ): ReActDecision => ({
   kind: 'action',
   toolId: names.toToolId(toolCall.function.name),
-  input: parseToolCallArguments(toolCall.function.arguments),
+  input: parseCompleteToolCallArguments(toolCall.function.arguments),
   ...(reasoning && reasoning.trim().length > 0 ? { reasoning } : {})
 })
 
@@ -137,14 +128,21 @@ type ToolCallAccumulator = { id: string; name: string; arguments: string }
 
 const applyToolCallChunk = (
   accumulators: Map<number, ToolCallAccumulator>,
-  chunk: ToolCallChunk
-): void => {
+  chunk: ToolCallChunk,
+  completeNames: ReadonlySet<string>
+): boolean => {
   const existing = accumulators.get(chunk.index) ?? { id: '', name: '', arguments: '' }
+  // Some gateways repeat the complete name/id as metadata. Only an advancing
+  // name or nonempty argument fragment counts; ids and indices never do.
+  const repeatedCompleteName = chunk.name === existing.name && completeNames.has(existing.name)
+  const nameDelta = chunk.name && !repeatedCompleteName ? chunk.name : ''
+  const argumentsDelta = chunk.argumentsDelta ?? ''
   accumulators.set(chunk.index, {
     id: chunk.id ?? existing.id,
-    name: chunk.name ?? existing.name,
-    arguments: existing.arguments + (chunk.argumentsDelta ?? '')
+    name: existing.name + nameDelta,
+    arguments: existing.arguments + argumentsDelta
   })
+  return nameDelta.length > 0 || argumentsDelta.length > 0
 }
 
 const accumulatorToToolCall = (accumulator: ToolCallAccumulator): ChatToolCall => ({
@@ -208,6 +206,9 @@ export async function* streamDecision(
   appInstructions?: string
 ): AsyncGenerator<DecisionChunk> {
   const names = buildToolNameMap(tools)
+  const completeNames = new Set(names.definitions.map((tool) => tool.function.name))
+  signal?.throwIfAborted()
+  yield { kind: 'request-start', model }
   const response = await requestDecision(
     context,
     names,
@@ -219,6 +220,8 @@ export async function* streamDecision(
   )
 
   let thought = ''
+  let completed = false
+  let meaningful = false
   const toolCalls = new Map<number, ToolCallAccumulator>()
 
   if (!response.body) {
@@ -232,11 +235,27 @@ export async function* streamDecision(
     // the timeline shows no rationale for models that don't emit reasoning_content
     // (issue #276). The terminal `usage` chunk carries no decision signal.
     if (chunk.kind === 'reasoning' || chunk.kind === 'content') {
+      if (!chunk.text) continue
+      meaningful = true
+      yield { kind: 'progress', source: chunk.kind }
       thought += chunk.text
       yield { kind: 'thought', text: thought }
     } else if (chunk.kind === 'tool_call') {
-      applyToolCallChunk(toolCalls, chunk)
+      if (applyToolCallChunk(toolCalls, chunk, completeNames)) {
+        meaningful = true
+        yield { kind: 'progress', source: 'tool_call' }
+      }
+    } else if (chunk.kind === 'finish') {
+      if (!['done', 'stop', 'tool_calls'].includes(chunk.reason)) {
+        throw new Error('ReAct decision stream ended without a complete response')
+      }
+      completed = true
     }
+  }
+
+  signal?.throwIfAborted()
+  if (!completed || !meaningful) {
+    throw new Error('ReAct decision stream ended without a complete response')
   }
 
   // `Array.from`, not `[...toolCalls.entries()]`: a Babel build with
@@ -246,12 +265,19 @@ export async function* streamDecision(
   const firstCall = Array.from(toolCalls.entries())
     .sort(([a], [b]) => a - b)
     .map(([, value]) => value)
-    .find((value) => value.name.length > 0)
+    .at(0)
+
+  // Validate every offered call before selecting index zero; never skip an
+  // incomplete first call and accidentally execute a later one. One action per
+  // decision remains the runtime policy.
+  for (const call of toolCalls.values()) {
+    if (!call.name) throw new Error('ReAct tool call is missing a function name')
+    if (call !== firstCall) parseCompleteToolCallArguments(call.arguments)
+  }
 
   // Carry the streamed prose as the decision's reasoning, mirroring the
   // non-streaming path so the two cannot diverge (issue #276). For an action with
-  // no prose, toActionDecision derives a label from the call; a final with no
-  // prose simply has no reasoning (the synthesized answer follows it).
+  // no prose, reasoning remains absent; the synthesized answer follows it.
   const reasoning = thought.trim().length > 0 ? thought : undefined
   const decision: ReActDecision = firstCall
     ? toActionDecision(accumulatorToToolCall(firstCall), names, reasoning)

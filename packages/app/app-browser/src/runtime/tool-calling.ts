@@ -79,14 +79,28 @@ export const buildToolNameMap = (tools: PlannerToolDescriptor[]): ToolNameMap =>
   }
 }
 
-// Parse the arguments of a native tool call into the action input. OpenAI sends
-// `function.arguments` as a JSON-encoded STRING (not a parsed object), and the
-// planner carries `toolCall.input` the same way (issue #287) — so the decoder is
-// the CANONICAL one in `@tinytinkerer/contracts`, re-exported here beside the rest
-// of the tool-call plumbing. Both call sites share one definition and cannot
-// diverge. A missing or unparseable value yields empty input; the tool's own schema
-// validation is the real gate (issue #276).
+// Legacy planner wire decoder, retained as a compatibility re-export. It falls
+// back to {} for malformed input. ReAct uses the strict native-call gate below
+// so an incomplete call can never become runnable empty input.
 export { parseToolCallArguments } from '@tinytinkerer/contracts'
+
+// Native function.arguments is protocol JSON, not free-form model prose. Do
+// not use the prose-recovery parser: it could extract a complete nested object
+// from a truncated outer argument bag, and captures raw input in telemetry.
+// Never turn malformed or truncated arguments into empty input: even a tool
+// with an all-optional schema could otherwise execute an unintended mutation.
+export const parseCompleteToolCallArguments = (value: string): Record<string, unknown> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('ReAct tool call arguments are not complete valid JSON')
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('ReAct tool call arguments must be a JSON object')
+  }
+  return parsed as Record<string, unknown>
+}
 
 // Serialize a tool invocation's result/error into the `tool` message content.
 // Tool output is arbitrary; JSON-encode it (falling back to String for

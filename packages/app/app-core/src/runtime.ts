@@ -128,6 +128,7 @@ export const createChatRuntime = (options: {
   toolTimeoutMs?: number
   stepTimeoutMs?: number
   firstChunkTimeoutMs?: number
+  decisionResponseTimeoutMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
   finalizeAssistantContent?: AgentAssistantContentFinalizer
   reportError?: RuntimeErrorReporter
@@ -148,6 +149,9 @@ export const createChatRuntime = (options: {
     ...(options.stepTimeoutMs !== undefined ? { stepTimeoutMs: options.stepTimeoutMs } : {}),
     ...(options.firstChunkTimeoutMs !== undefined
       ? { firstChunkTimeoutMs: options.firstChunkTimeoutMs }
+      : {}),
+    ...(options.decisionResponseTimeoutMs !== undefined
+      ? { decisionResponseTimeoutMs: options.decisionResponseTimeoutMs }
       : {}),
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }
@@ -203,6 +207,9 @@ const toAgentError = (error: unknown): unknown =>
     : error
 
 const createProviderAdapter = (provider: ModelProvider): ModelProvider => ({
+  ...(provider.decisionStreamLifecycle
+    ? { decisionStreamLifecycle: provider.decisionStreamLifecycle }
+    : {}),
   async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions) {
     try {
       return await provider.plan(prompt, history, options)

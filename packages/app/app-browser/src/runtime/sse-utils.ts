@@ -136,7 +136,7 @@ const extractToolCallChunks = (delta: unknown): ToolCallChunk[] => {
     }
     const record = entry as Record<string, unknown>
     const index = record['index']
-    if (typeof index !== 'number') {
+    if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) {
       continue
     }
     const fn = record['function'] as Record<string, unknown> | undefined
@@ -169,6 +169,7 @@ export async function* parseSseStream(
     reader.cancel().catch(() => undefined)
   }
   signal?.addEventListener('abort', onAbort, { once: true })
+  if (signal?.aborted) onAbort()
 
   const parseSseLine = (line: string): { chunks: SynthesisChunk[]; done: boolean } => {
     if (!line.startsWith('data: ')) {
@@ -177,7 +178,7 @@ export async function* parseSseStream(
 
     const data = line.slice(6).trim()
     if (data === '[DONE]') {
-      return { chunks: [], done: true }
+      return { chunks: [{ kind: 'finish', reason: 'done' }], done: true }
     }
 
     try {
@@ -196,6 +197,7 @@ export async function* parseSseStream(
         return { chunks, done: false }
       }
 
+      const finishReason = (choices[0] as Record<string, unknown> | undefined)?.['finish_reason']
       const delta = (choices[0] as Record<string, unknown> | undefined)?.['delta']
       const reasoning = extractReasoning(delta)
       if (reasoning) {
@@ -211,6 +213,9 @@ export async function* parseSseStream(
       // `tool_call` chunk; the decide path accumulates them by index.
       for (const toolCallChunk of extractToolCallChunks(delta)) {
         chunks.push(toolCallChunk)
+      }
+      if (typeof finishReason === 'string' && finishReason) {
+        chunks.push({ kind: 'finish', reason: finishReason })
       }
       return { chunks, done: false }
     } catch {
@@ -256,6 +261,10 @@ export async function* parseSseStream(
     }
   } finally {
     signal?.removeEventListener('abort', onAbort)
+    // Also close an upstream body when a consumer rejects a partial response.
+    // Do not await: a tee cancellation settles only when the inspector branch
+    // also finishes, which must never hold up the runtime.
+    void reader.cancel().catch(() => undefined)
     reader.releaseLock()
   }
 }
