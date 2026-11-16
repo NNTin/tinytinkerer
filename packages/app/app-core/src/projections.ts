@@ -393,6 +393,10 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
         isStreaming: false,
         activity: emptyActivity()
       }
+    } else if (event.type === 'agent.run.started' && !pendingTurn) {
+      // Only an explicit Resume (#531) starts a run without a user.message: it
+      // continues the latest turn, whose stale notice its own run supersedes.
+      if ((pendingTurn = turns.pop())) delete pendingTurn.notice
     } else if (event.type === 'assistant.chunk') {
       const content = coerceAssistantContent(event.payload.content)
       if (pendingTurn) {

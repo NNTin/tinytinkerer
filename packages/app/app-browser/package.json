@@ -79,6 +79,7 @@
     "@types/react": "19.2.15",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
+    "fake-indexeddb": "6.2.8",
     "jsdom": "29.1.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",

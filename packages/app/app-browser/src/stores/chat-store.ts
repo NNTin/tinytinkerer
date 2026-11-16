@@ -79,6 +79,11 @@ export type ChatState = {
   // conversation history. No-op when there is no user turn yet or a run is
   // already in flight (gated by sendPrompt). Backs the "regenerate" action.
   rerunLastPrompt: () => Promise<void>
+  // Explicit Resume (issue #531): continue the saved run of `turnId` — the
+  // latest turn's `user.message` id — from its unfinished step, through the
+  // same latch, disclosure gate and cooldown as a send. Never implied by
+  // sendPrompt/rerunLastPrompt, and never started automatically.
+  resumeRun: (prompt: string, turnId: string, conversationId?: string) => Promise<void>
   cancelRetry: (conversationId?: string) => void
   // Abort the in-flight generation (the "Stop" affordance). Shares the single
   // abort path with cancelRetry — both signal the same AbortController. Targets
@@ -302,6 +307,99 @@ export const createChatStore = (options: {
       await action(await loadCoreModule())
     }
 
+    // The one path every run takes: sendPrompt (composer, Regenerate) and an
+    // explicit resumeRun differ only in `resume`, which reaches the runtime
+    // factory's run-scoped context.
+    const startRun = async (
+      prompt: string,
+      conversationId: string | undefined,
+      sendOptions: { onAdmitted?: () => void } | undefined,
+      resume?: { turnId: string }
+    ): Promise<void> => {
+      // Gate re-entry synchronously (issue #334), now per conversation: a
+      // second send/regenerate into the SAME conversation that fires while
+      // the first is still resolving its awaits (module load, runtime
+      // factory) would otherwise start a concurrent run against it. Before
+      // hydration the active conversation id is unknown; such sends latch on
+      // the '' placeholder key (they all target the same conversation, and
+      // ids are UUIDs, so '' can never collide with a real one).
+      // tryAcquire also enforces the concurrency cap (issue #430): entries
+      // exist exactly while a conversation is running or mid-send, so the
+      // registry's size is the count.
+      const runKey = conversationId ?? get().conversationId ?? ''
+      const handle = runRegistry.tryAcquire(runKey)
+      if (!handle) {
+        return
+      }
+      try {
+        // Nothing leaves this app before its disclosure is acknowledged
+        // (issue #481). Inside the run latch, so a reader answering the dialog
+        // cannot have a second send slip in beside this one; before any
+        // conversation state is touched, so a decline leaves no trace.
+        //
+        // Checked HERE rather than only at the composer because this is the
+        // call every send shares — `rerunLastPrompt` reaches it directly.
+        if (options.outboundSendGate && !(await options.outboundSendGate(prompt))) {
+          return
+        }
+        await ensureInitialized(set, get)
+        const { executeChatPrompt, sendConversationPromptAction } = await loadCoreModule()
+        // Target resolution, gating (per-conversation run state + global
+        // cooldown), hydration, and streaming into the run's OWN conversation
+        // slice live in app-core — only this orchestration stays in the entry
+        // chunk. executeChatPrompt is injected so tests keep their mock seam.
+        await sendConversationPromptAction(
+          resume
+            ? {
+                ...conversationActions,
+                getRuntimeFactory: async () => {
+                  const factory = await getRuntimeFactory()
+                  return { create: (context) => factory.create({ ...context, resume }) }
+                }
+              }
+            : conversationActions,
+          {
+            prompt,
+            conversationId,
+            handle,
+            registry: runRegistry,
+            execute: executeChatPrompt,
+            ...(sendOptions?.onAdmitted ? { onAdmitted: sendOptions.onAdmitted } : {})
+          }
+        )
+      } finally {
+        // The action may have re-keyed the handle (via registry.rekey) from
+        // the pre-hydration placeholder onto the resolved conversation id;
+        // release() finds whichever key currently holds it, and reports it.
+        const finished = runRegistry.release(handle)
+
+        // Settle any human prompt this run left queued (issue #498).
+        //
+        // Normally there is none: a HITL tool blocks the run until the reader
+        // answers, so the send cannot reach here first. The exception is the
+        // human-input BUDGET. `withTimeout` (agent-core) races the tool against
+        // `humanInputTimeoutMs` and rejects, but nothing cancels the underlying
+        // `requestHumanInput` promise — so the entry stays queued, the run
+        // finishes without it, and the reader is left with a question whose run
+        // is gone (and, once #498's launcher badge exists, a badge advertising
+        // it). The same holds for a run that fails for any other reason while a
+        // prompt is open.
+        //
+        // Scoped to THIS app (the queue is per app since #489) and to the
+        // conversation that just finished — never an unscoped reset, which would
+        // dismiss a prompt belonging to another conversation still running
+        // beside this one.
+        //
+        // Truthiness, not `!== undefined`: the pre-hydration placeholder key is
+        // `''`, and a run that never resolved a conversation also never gave its
+        // runtime one — so any prompt it raised is unscoped and would not have
+        // matched `settleHumanPrompts('')` anyway. Passing `''` through would be
+        // the one thing that must not happen here, since an undefined id
+        // deliberately settles everything.
+        if (finished) settleHumanPrompts(finished)
+      }
+    }
+
     return {
       hydrated: false,
       conversationId: undefined,
@@ -316,79 +414,10 @@ export const createChatStore = (options: {
         const runKey = conversationId ?? get().conversationId ?? ''
         return !runRegistry.has(runKey) && runRegistry.size < MAX_CONCURRENT_RUNS
       },
-      sendPrompt: async (prompt, conversationId, sendOptions) => {
-        // Gate re-entry synchronously (issue #334), now per conversation: a
-        // second send/regenerate into the SAME conversation that fires while
-        // the first is still resolving its awaits (module load, runtime
-        // factory) would otherwise start a concurrent run against it. Before
-        // hydration the active conversation id is unknown; such sends latch on
-        // the '' placeholder key (they all target the same conversation, and
-        // ids are UUIDs, so '' can never collide with a real one).
-        // tryAcquire also enforces the concurrency cap (issue #430): entries
-        // exist exactly while a conversation is running or mid-send, so the
-        // registry's size is the count.
-        const runKey = conversationId ?? get().conversationId ?? ''
-        const handle = runRegistry.tryAcquire(runKey)
-        if (!handle) {
-          return
-        }
-        try {
-          // Nothing leaves this app before its disclosure is acknowledged
-          // (issue #481). Inside the run latch, so a reader answering the dialog
-          // cannot have a second send slip in beside this one; before any
-          // conversation state is touched, so a decline leaves no trace.
-          //
-          // Checked HERE rather than only at the composer because this is the
-          // call every send shares — `rerunLastPrompt` reaches it directly.
-          if (options.outboundSendGate && !(await options.outboundSendGate(prompt))) {
-            return
-          }
-          await ensureInitialized(set, get)
-          const { executeChatPrompt, sendConversationPromptAction } = await loadCoreModule()
-          // Target resolution, gating (per-conversation run state + global
-          // cooldown), hydration, and streaming into the run's OWN conversation
-          // slice live in app-core — only this orchestration stays in the entry
-          // chunk. executeChatPrompt is injected so tests keep their mock seam.
-          await sendConversationPromptAction(conversationActions, {
-            prompt,
-            conversationId,
-            handle,
-            registry: runRegistry,
-            execute: executeChatPrompt,
-            ...(sendOptions?.onAdmitted ? { onAdmitted: sendOptions.onAdmitted } : {})
-          })
-        } finally {
-          // The action may have re-keyed the handle (via registry.rekey) from
-          // the pre-hydration placeholder onto the resolved conversation id;
-          // release() finds whichever key currently holds it, and reports it.
-          const finished = runRegistry.release(handle)
-
-          // Settle any human prompt this run left queued (issue #498).
-          //
-          // Normally there is none: a HITL tool blocks the run until the reader
-          // answers, so the send cannot reach here first. The exception is the
-          // human-input BUDGET. `withTimeout` (agent-core) races the tool against
-          // `humanInputTimeoutMs` and rejects, but nothing cancels the underlying
-          // `requestHumanInput` promise — so the entry stays queued, the run
-          // finishes without it, and the reader is left with a question whose run
-          // is gone (and, once #498's launcher badge exists, a badge advertising
-          // it). The same holds for a run that fails for any other reason while a
-          // prompt is open.
-          //
-          // Scoped to THIS app (the queue is per app since #489) and to the
-          // conversation that just finished — never an unscoped reset, which would
-          // dismiss a prompt belonging to another conversation still running
-          // beside this one.
-          //
-          // Truthiness, not `!== undefined`: the pre-hydration placeholder key is
-          // `''`, and a run that never resolved a conversation also never gave its
-          // runtime one — so any prompt it raised is unscoped and would not have
-          // matched `settleHumanPrompts('')` anyway. Passing `''` through would be
-          // the one thing that must not happen here, since an undefined id
-          // deliberately settles everything.
-          if (finished) settleHumanPrompts(finished)
-        }
-      },
+      sendPrompt: (prompt, conversationId, sendOptions) =>
+        startRun(prompt, conversationId, sendOptions),
+      resumeRun: (prompt, turnId, conversationId) =>
+        startRun(prompt, conversationId, undefined, { turnId }),
       rerunLastPrompt: async () => {
         await ensureInitialized(set, get)
         const { latestUserPrompt } = await loadCoreModule()

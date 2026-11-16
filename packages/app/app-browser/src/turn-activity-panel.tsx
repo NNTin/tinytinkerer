@@ -30,7 +30,7 @@ import {
   type ReActDecisionKind
 } from '@tinytinkerer/contracts'
 import { LazyReadOnlyCodeView } from './lazy-read-only-code-view'
-import { memo, useEffect, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useState } from 'react'
 import { useResolvedPluginView, type PluginViewResolution } from './resolved-plugin-view'
 import { captureTelemetryMessage } from './telemetry/telemetry'
 
@@ -44,6 +44,18 @@ export type ResolveActivitySummarizer = (toolId: string) => ActivitySummarizer |
 // `thinking-dot` animation class is provided globally by the host app CSS.
 // Shared with turn-chrome.tsx, which only colours the dots differently — one
 // copy instead of two keeps the chat route chunk inside its budget.
+const RunRecoveryPanel = lazy(() => import('./run-recovery-panel'))
+
+// Saved progress + explicit Resume for the latest turn (issue #531), rendered
+// by TurnChrome. The lazy boundary is declared here, in the chunk the chat
+// surface shares with the other surfaces, so the panel and its loader stay out
+// of the chat surface's own budget.
+export const RunRecovery = (props: { turnId: string; prompt: string }) => (
+  <Suspense>
+    <RunRecoveryPanel {...props} />
+  </Suspense>
+)
+
 export const ThinkingDots = ({ tone = 'bg-[var(--muted)]' }: { tone?: string }) => (
   <span aria-label="Thinking" className="inline-flex items-end gap-0.5 pb-0.5">
     {[0, 1, 2].map((dot) => (

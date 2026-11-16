@@ -45,8 +45,16 @@ export type { DocumentGlobalCapabilities, GlobalHostCapabilities } from './docum
 export type {
   AppAssistantPolicy,
   AppInstructionBoundary,
-  AppToolResultRecord
+  AppReconcileResult,
+  AppRecoveryVerdict,
+  AppRunRecovery,
+  AppToolResultRecord,
+  AppUncertainToolCall
 } from './app-assistant-policy'
+// Saved run progress (issue #531): the record's shape and version, for hosts
+// that inspect or migrate it. Read/written only through the app's own shell.
+export { RUN_CHECKPOINT_VERSION } from './runtime/run-checkpoint'
+export type { RunCheckpoint } from './runtime/run-checkpoint'
 export { hostMcpServerStatus } from './stores/host-mcp-store'
 export type {
   HostMcpServer,

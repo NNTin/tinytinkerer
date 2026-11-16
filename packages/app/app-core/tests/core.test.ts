@@ -1709,3 +1709,51 @@ describe('compareEventOrder', () => {
     expect(tools[0]).toMatchObject({ toolId: 'web-search', status: 'completed' })
   })
 })
+
+describe('resumed run projection (issue #531)', () => {
+  const at = (index: number) => `2026-11-15T00:00:0${index}.000Z`
+  const done = (id: string, index: number, source: string) =>
+    ({
+      id,
+      timestamp: at(index),
+      type: 'assistant.done',
+      payload: { source, content: { nodes: [] } }
+    }) as unknown as ChatEvent
+  const events = [
+    { id: 'u1', timestamp: at(0), type: 'user.message', payload: { text: 'Build it' } },
+    { id: 'r1', timestamp: at(1), type: 'agent.run.started', payload: { agentType: 'react' } },
+    { id: 'e1', timestamp: at(2), type: 'error', payload: { message: 'ReAct decision timed out' } },
+    done('d1', 3, 'Partial.'),
+    // An explicit Resume emits no user.message: it continues the turn.
+    { id: 'r2', timestamp: at(4), type: 'agent.run.started', payload: { agentType: 'react' } },
+    {
+      id: 's2',
+      timestamp: at(5),
+      type: 'agent.step.started',
+      payload: { stepId: 'x', kind: 'observe', title: 'Resumed with 4 saved tool results' }
+    },
+    done('d2', 6, 'Final.')
+  ] as ChatEvent[]
+
+  it('continues the latest turn, replacing its answer and stale notice', () => {
+    const turns = buildTurns(events)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({ id: 'u1', assistantSource: 'Final.' })
+    expect(turns[0]!.notice).toBeUndefined()
+    expect(turns[0]!.activity.items.map((item) => item.kind === 'label' && item.label)).toContain(
+      'Resumed with 4 saved tool results'
+    )
+  })
+
+  it('pairs the prompt with the latest answer once in history', () => {
+    expect(buildConversationHistory(events)).toEqual([
+      { role: 'user', content: 'Build it' },
+      { role: 'assistant', content: 'Final.' }
+    ])
+    // A cancelled turn (no answer) that a Resume later finished is included.
+    expect(buildConversationHistory([events[0]!, done('d0', 1, ''), ...events.slice(4)])).toEqual([
+      { role: 'user', content: 'Build it' },
+      { role: 'assistant', content: 'Final.' }
+    ])
+  })
+})

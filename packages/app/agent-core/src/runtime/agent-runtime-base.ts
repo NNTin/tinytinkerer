@@ -12,7 +12,8 @@ import type {
   CreateAssistantContentSession,
   ExecutionContext,
   ModelProvider,
-  ProviderCallOptions
+  ProviderCallOptions,
+  ToolInvocation
 } from '../types'
 import { RuntimeTimeoutError, type DecisionTimeoutDiagnostics } from '../errors/timeout-error'
 import { runToolBeforeExecuteHooks } from '../plugins/hooks'
@@ -106,6 +107,10 @@ export type AgentRuntimeOptions = {
 export type RunOptions = {
   signal?: AbortSignal
   history?: ConversationMessage[]
+  /** Explicit resume (#531): calls the run already made, replayed only as
+   * observations. Read by ReAct alone; the context, budget and run anchor
+   * stay fresh. */
+  restoredInvocations?: readonly ToolInvocation[]
 }
 
 // Outcome of running a single tool, surfaced to callers via the generator's

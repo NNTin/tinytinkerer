@@ -1012,3 +1012,48 @@ describe('createChatStore', () => {
     expect(remaining[0]?.conversationId).toBe('b')
   })
 })
+
+describe('explicit Resume (issue #531)', () => {
+  const startStore = () => {
+    const contexts: unknown[] = []
+    mockCreateBrowserRuntimeFactory.mockReturnValue({
+      create: vi.fn((context: unknown) => {
+        contexts.push(context)
+        return {}
+      })
+    })
+    const runs: { runtimeFactory: { create: (context: unknown) => unknown } }[] = []
+    mockExecuteChatPrompt.mockImplementation(
+      (options: (typeof runs)[number]) =>
+        new Promise<void>(() => {
+          runs.push(options)
+        })
+    )
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'conv-1', events: [userMessage('turn-1', 'Make it')] }])
+    return { store, runs, contexts }
+  }
+
+  it('reaches the runtime factory with the turn to resume, and a second Resume is latched', async () => {
+    const { store, runs, contexts } = startStore()
+    void store.getState().resumeRun('Make it', 'turn-1')
+    void store.getState().resumeRun('Make it', 'turn-1')
+    await vi.waitFor(() => expect(runs).toHaveLength(1))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(runs).toHaveLength(1)
+    runs[0]!.runtimeFactory.create({ conversationId: 'conv-1' })
+    expect(contexts).toEqual([{ conversationId: 'conv-1', resume: { turnId: 'turn-1' } }])
+  })
+
+  it('never turns a send or Regenerate into a Resume', async () => {
+    const { store, runs, contexts } = startStore()
+    void store.getState().rerunLastPrompt()
+    await vi.waitFor(() => expect(runs).toHaveLength(1))
+    runs[0]!.runtimeFactory.create({ conversationId: 'conv-1' })
+    expect(contexts).toEqual([{ conversationId: 'conv-1' }])
+  })
+})

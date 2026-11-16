@@ -301,7 +301,7 @@ describe('shell bundle regression guard', () => {
     }
   })
 
-  it('keeps the lazy app-core chunk under 126 kB', () => {
+  it('keeps the lazy app-core chunk under 147.25 kB', () => {
     // Split out of the generic 120 kB guard (2026-07-16): the multi-conversation
     // state layer (issue #430) deliberately lives in this lazily-loaded chunk —
     // the chat store's action bodies moved into app-core precisely to keep every
@@ -320,9 +320,23 @@ describe('shell bundle regression guard', () => {
     // since this chunk imports it statically. The new ceiling leaves the same
     // ~1 kB of headroom the old one had; our own code in this chunk gets no
     // extra allowance from this raise.
+    //
+    // Raised 147 → 147.25 kB (2026-11-16, issue #531): explicit Resume of a run
+    // that failed after successful tool work. Measured 150,484 chars (44 under
+    // the old ceiling) on develop and 150,661 with this change (+177), all of it
+    // runtime-core contract that cannot live in a lazier chunk: ReAct seeding a
+    // fresh context with the restored calls (55), `buildTurns` continuing the
+    // latest turn for a resumed run (67), history pairing a turn with its latest
+    // answer (+40) and the shared event constructor re-export (17). Everything
+    // else — the checkpoint model, storage, validation, the checkpointing
+    // decorator (get-runtime, +5.1 kB) and the Resume panel (its own lazy
+    // chunk) — stays out of this chunk. The alternatives that fit 44 chars
+    // (replaying the prompt as a duplicate turn, keeping the partial answer in
+    // model history) were rejected as wrong, not merely larger. A quarter-kB
+    // step leaves ~120 chars of headroom: not an allowance for further growth.
     const chunk = chunks.find((entry) => entry.fileName.includes('app-core'))
     expect(chunk, 'No app-core chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(147)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(147.25)
   })
 
   it('keeps the shared React vendor chunk under 300 kB', () => {

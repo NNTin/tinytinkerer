@@ -25,13 +25,14 @@ export const RICH_CONTENT_PLAYGROUND_URL = `${DOCS_ORIGIN}/docs/extending/rich-c
 // storage location directly instead.
 //
 // Seeded via a raw indexedDB.open (page-evaluated code has no Dexie import
-// available), matching TinyTinkererDb's CURRENT schema exactly (db.ts's
-// version(3).stores(): conversations 'id,updatedAt', events
-// 'id,conversationId,timestamp', preferences 'key'). Because this only ever runs
-// against a brand-new database (first ever open in a fresh browser context), a
-// single-version open at version 3 that creates the final store shapes directly
+// available), creating the stores whose rows this needs (db.ts's version(3)
+// shapes: conversations 'id,updatedAt', events 'id,conversationId,timestamp',
+// preferences 'key'). Because this only ever runs against a brand-new database
+// (first ever open in a fresh browser context), a single raw open at version 3
 // is indistinguishable, on disk, from Dexie stepping through versions 1->2->3 on
-// an empty database (those upgrade() functions only transform EXISTING rows).
+// an empty database (those upgrade() functions only transform EXISTING rows);
+// Dexie's own later versions (4 adds runCheckpoints, issue #531) are then
+// applied as a normal upgrade when the app opens it.
 //
 // A seeded token is otherwise useless on its own: any authenticated request
 // (chat, search, MCP) makes the edge worker validate the caller by probing the

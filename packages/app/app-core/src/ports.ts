@@ -1,5 +1,5 @@
 import type { ChatEvent, SystemStatus } from '@tinytinkerer/contracts'
-import type { ConversationMessage } from './runtime'
+import type { ConversationMessage, ToolInvocation } from './runtime'
 
 export type Conversation = {
   id: string
@@ -74,7 +74,12 @@ export interface ModelsGateway {
 export interface ChatRuntime {
   run(
     prompt: string,
-    options?: { signal?: AbortSignal; history?: ConversationMessage[] }
+    options?: {
+      signal?: AbortSignal
+      history?: ConversationMessage[]
+      // Explicit resume only (#531); see agent-core RunOptions.
+      restoredInvocations?: readonly ToolInvocation[]
+    }
   ): AsyncGenerator<ChatEvent>
 }
 
@@ -85,6 +90,13 @@ export interface ChatRuntime {
 // single-conversation host), so existing test fakes keep working unmodified.
 export type ChatRuntimeContext = {
   conversationId?: string
+  /**
+   * Set only by an explicit Resume (#531): the run continues the saved run of
+   * the conversation's latest turn, identified by that turn's `user.message`
+   * event id, instead of starting from the prompt. A factory without
+   * checkpoint support must refuse rather than run the prompt afresh.
+   */
+  resume?: { turnId: string }
 }
 
 export interface ChatRuntimeFactory {
