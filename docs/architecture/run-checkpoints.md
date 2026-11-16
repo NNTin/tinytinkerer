@@ -26,6 +26,7 @@ run. It is stored in the `runCheckpoints` table of the conversation database (De
 | `account`, `origins`       | SHA-256 fingerprints of the credential the run used (or `anonymous`), and of each MCP server address by server id. Neither the token nor the address is stored.                              |
 | `state`, `stop`, `blocked` | `running`, `stopped` (`failed`, `rate_limited`, `cancelled`, `unfinished`) or `blocked` with a reason and whether retrying can help.                                                         |
 | `attempts`, timestamps     | How many times this run has been resumed, and wall-clock times. No monotonic timestamps are kept.                                                                                            |
+| `owner`                    | Fencing token of the run attempt that owns the record. Every write compares it (see below).                                                                                                  |
 
 A checkpoint is conversation state. Its outputs can contain capability-bearing references, such
 as artifact ids or download URLs. They are never sent to telemetry and never copied into
@@ -52,14 +53,38 @@ settles. The tool's gates and dispatch both happen after that point.
    event and an answer saying that progress could not be saved. The old record is still
    accurate, because the call was never made.
 
+## Ownership across tabs
+
+`RunCheckpointStore` writes only by compare-and-swap. `swap(record, expectedOwner)` and
+`delete(conversationId, expectedOwner)` each run in one IndexedDB read-write transaction, which
+the browser serializes across every connection to the database, including other tabs and
+windows. Each run attempt has its own `owner` token. Its first write expects no record (or the
+record a Send just superseded), and every later write expects its own token.
+
+- A Resume claims the record by swapping the stored owner for a new one before any request. Of
+  two tabs that resume the same progress at the same moment, exactly one claim succeeds. The
+  other is refused with "already being resumed in another tab or window" and makes no request.
+- A run whose record was claimed elsewhere fails its next compare-and-swap. It stops before its
+  next tool call and says that its progress now belongs to the run in the other tab. It writes
+  nothing more.
+- A refusal records its reason against the loaded owner without claiming the record.
+
+There is no lease. A tab that closes or reloads leaves no lock behind, so its progress can be
+resumed at once, and its unanswered call is uncertain.
+
 Lifecycle:
 
 - A new run (Send or Regenerate) supersedes the conversation's checkpoint.
-- A run that reaches a `final` decision deletes its checkpoint.
+- A run that reaches a `final` decision deletes its checkpoint. That cleanup can fail, so before
+  anything else, Resume (and the panel) read the conversation's persisted events. If the turn's
+  latest run reached a `final` decision and its answer, with no error or rate-limit stop after
+  it, the run is finished. Resume then refuses ("already finished"), removes the stale record
+  and makes no request. A refused Resume adds no step or tool activity, so it does not count as
+  a new run.
 - Every other end keeps it for Resume: a failure, a rate-limit stop, the step budget, a
   cancellation or a reload.
 - Conversation delete, reset and restart remove the checkpoint together with the events.
-- A checkpoint older than `CHECKPOINT_TTL_MS` (7 days) is refused as expired.
+- A checkpoint more than `CHECKPOINT_TTL_MS` (7 days) past its `createdAt` is refused as expired. Later writes (attempts, refusals, stops) never extend it.
 
 ## Terminal failures
 
@@ -82,18 +107,19 @@ pre-send disclosure gate and the cooldown gate. Only this action sets
 Before any model request, Resume checks the checkpoint in this order and stops at the first
 problem:
 
-| Check                   | Outcome when it fails                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Readable, version 1     | Incompatible. The record is kept as evidence.                                                                                                                               |
-| Same conversation, turn | Refused. An earlier turn's progress cannot continue a later one.                                                                                                            |
-| Not blocked for good    | The stored reason.                                                                                                                                                          |
-| ReAct strategy          | Refused. Hybrid and plan-execute runs have plan state that a checkpoint does not keep.                                                                                      |
-| Not expired             | Expired.                                                                                                                                                                    |
-| Same access             | Retryable: sign in with the original account.                                                                                                                               |
-| Every saved call        | It needs a recorded source (provenance is never invented), a registered tool with the same source, and the same MCP server address. Missing or changed tools are retryable. |
-| The uncertain call      | `recovery.reconcile` decides it (below). Without a reconciler, Resume is blocked.                                                                                           |
-| `recovery.revalidate`   | The host's reason, for example a missing or expired artifact.                                                                                                               |
-| Commit the attempt      | The checkpoint could not be saved: Resume stops.                                                                                                                            |
+| Check                    | Outcome when it fails                                                                                                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Readable, version 1      | Incompatible. The record is kept as evidence.                                                                                                                               |
+| Run not already finished | Refused, from the persisted events. The stale record is removed.                                                                                                            |
+| Same conversation, turn  | Refused. An earlier turn's progress cannot continue a later one.                                                                                                            |
+| Not blocked for good     | The stored reason.                                                                                                                                                          |
+| ReAct strategy           | Refused. Hybrid and plan-execute runs have plan state that a checkpoint does not keep.                                                                                      |
+| Not expired              | Expired.                                                                                                                                                                    |
+| Same access              | Retryable, but only the original credential can match (see Limits).                                                                                                         |
+| Every saved call         | It needs a recorded source (provenance is never invented), a registered tool with the same source, and the same MCP server address. Missing or changed tools are retryable. |
+| The uncertain call       | `recovery.reconcile` decides it (below). Without a reconciler, Resume is blocked.                                                                                           |
+| `recovery.revalidate`    | The host's reason, for example a missing or expired artifact.                                                                                                               |
+| Claim the attempt        | Compare-and-swap of the owner. Another tab claimed it first, or the record could not be saved: Resume stops.                                                                |
 
 A refusal is saved on the checkpoint and shown as a `Resume stopped: …` notice on the turn. It
 makes no model request and no tool call, and it never creates a replacement artifact. Retryable
@@ -153,11 +179,14 @@ references. If a hook rejects, Resume is blocked as retryable.
 
 ## Limits
 
-- Resume is guarded within one page by the run latch. Two tabs that resume the same
-  conversation at the same moment are not coordinated.
-- If the delete after a completed run fails, the record stays. Resuming it continues from the
-  next decision and repeats no call.
-- The credential fingerprint changes when the token changes, so a fresh sign-in with the same
-  account is refused as different access.
+- Ownership is a fencing token, not a lease, so a live run in one tab can be claimed by a Resume
+  in another. The claimed run then stops before its next call. At most one of them can dispatch
+  calls from the record.
+- Access is compared by credential. The app has no refresh tokens: a GitHub OAuth token lasts
+  until it is revoked or replaced by a new sign-in. The only client-side identity is a network
+  probe of GitHub's `/user`, which gives a login that can be renamed and is cached per token.
+  It is no stable account id. So a fresh sign-in issues a new token, even for the same account,
+  and is refused as different access. Only the original credential can match, for example a
+  host-provided token that is restored. Accounts and servers stay isolated either way.
 - MCP discovery carries no tool annotations, so every uncertain call is treated as a possible
   mutation.

@@ -12,6 +12,7 @@ import {
   MAX_CHECKPOINT_CHARS,
   parseCheckpoint,
   RUN_CHECKPOINT_VERSION,
+  turnRunFinished,
   UNCERTAIN_CALL,
   type RunCheckpoint,
   type RunCheckpointBlock,
@@ -47,6 +48,9 @@ export type CheckpointingOptions = {
   tools: ReadonlyMap<string, ToolSource | undefined>
   recovery?: AppRunRecovery
   createSession: CreateSession
+  // The conversation's persisted events: durable evidence that a run already
+  // finished, checked before a Resume and independent of the checkpoint.
+  events?: () => Promise<readonly ChatEvent[]>
 }
 
 const successful = (invocations: readonly ToolInvocation[]): AppToolResultRecord[] =>
@@ -76,11 +80,26 @@ export const withRunCheckpoint = (
     let mode: 'full' | 'marker' | 'off' = store ? 'full' : 'off'
     let checkpoint: RunCheckpoint | undefined
     let written = false
+    // This attempt's fencing token, and the owner the stored record carries
+    // as far as this run knows (undefined: nothing stored yet).
+    const owner = crypto.randomUUID()
+    let held: string | undefined
+    // The record was claimed by another tab or window: this run must not make
+    // another call, and writes nothing more.
+    let lost = false
     const savedAs = () =>
-      mode === 'full' ? 'resumable' : mode === 'marker' ? 'too_large' : 'not_saved'
+      lost
+        ? 'elsewhere'
+        : mode === 'full'
+          ? 'resumable'
+          : mode === 'marker'
+            ? 'too_large'
+            : 'not_saved'
 
     const commit = async (): Promise<boolean> => {
+      if (lost) return false
       if (mode !== 'full' || !checkpoint) return true
+      checkpoint.owner = owner
       checkpoint.updatedAt = new Date().toISOString()
       const tooLarge = JSON.stringify(checkpoint).length > MAX_CHECKPOINT_CHARS
       let record = checkpoint
@@ -97,18 +116,27 @@ export const withRunCheckpoint = (
         delete record.inFlight
       }
       try {
-        await store!.put(record)
-        written = true
-        if (tooLarge) mode = 'marker'
-        return true
-      } catch {
-        try {
-          await store!.delete(conversationId)
-          mode = 'off'
+        if (await store!.swap(record, held)) {
+          held = owner
+          written = true
+          if (tooLarge) mode = 'marker'
           return true
-        } catch {
-          return false
         }
+        lost = true
+        return false
+      } catch {
+        // Unwritable: remove our stale record so it cannot misdescribe the
+        // run. Another owner's record is left alone, and so is this run.
+        try {
+          if (await store!.delete(conversationId, held ?? owner)) {
+            mode = 'off'
+            return true
+          }
+          lost = true
+        } catch {
+          // Neither write nor delete: the stale record stays authoritative.
+        }
+        return false
       }
     }
 
@@ -118,10 +146,12 @@ export const withRunCheckpoint = (
       reason: string,
       block?: RunCheckpointBlock
     ): AsyncGenerator<ChatEvent, void> {
-      if (checkpoint && block) {
+      // Recorded on the loaded record without claiming it.
+      if (checkpoint && block && store) {
         checkpoint.state = 'blocked'
         checkpoint.blocked = block
-        await commit()
+        checkpoint.updatedAt = new Date().toISOString()
+        await store.swap(checkpoint, checkpoint.owner).catch(() => false)
       }
       yield event('agent.run.started', { agentType: checkpoint?.agentType ?? 'react' })
       yield event('system', { message: `Resume stopped: ${reason}`, level: 'warning' })
@@ -136,6 +166,17 @@ export const withRunCheckpoint = (
       if (!parsed) return yield* refuse('there is no saved progress for this turn.')
       if (!parsed.ok) return yield* refuse(parsed.reason)
       checkpoint = parsed.checkpoint
+      held = checkpoint.owner
+      // Completion is read from the persisted events, so progress whose
+      // cleanup failed is not continued: nothing is left unfinished.
+      if (
+        checkpoint.turnId === resume.turnId &&
+        turnRunFinished((await options.events?.().catch(() => [])) ?? [], resume.turnId)
+      ) {
+        await store!.delete(conversationId, held).catch(() => false)
+        checkpoint = undefined
+        return yield* refuse('this run already finished, so there is nothing left to resume.')
+      }
       const verdict = assessCheckpoint(checkpoint, {
         conversationId,
         turnId: resume.turnId,
@@ -204,18 +245,33 @@ export const withRunCheckpoint = (
       checkpoint.attempts += 1
       delete checkpoint.blocked
       delete checkpoint.stop
-      // Claim the attempt durably before any request: a Resume that cannot
-      // record its own progress would make the next reload misdescribe it.
+      // Claim the attempt durably before any request (compare-and-swap on the
+      // owner): of two tabs resuming the same progress only one gets here, and
+      // a Resume that cannot record its own progress would make the next
+      // reload misdescribe it.
       if (!(await commit()) || mode !== 'full') {
+        const elsewhere = lost
         mode = 'off'
-        return yield* refuse('progress could not be saved in this browser. Try again.')
+        lost = false
+        checkpoint = undefined
+        return yield* refuse(
+          elsewhere
+            ? 'this progress is already being resumed in another tab or window.'
+            : 'progress could not be saved in this browser. Try again.'
+        )
       }
       history = checkpoint.history
       restored = checkpoint.invocations.slice()
     } else if (store) {
       // A new run supersedes the conversation's saved progress. A failed
       // delete leaves a record scoped to an earlier turn, which Resume refuses.
-      await store.delete(conversationId).catch(() => {})
+      const prior = (await store.get(conversationId).catch(() => undefined)) as
+        | { owner?: unknown }
+        | undefined
+      if (!(await store.delete(conversationId).catch(() => false))) {
+        // Overwrite it on the first commit instead.
+        held = typeof prior?.owner === 'string' ? prior.owner : undefined
+      }
     }
 
     let finished = false
@@ -245,6 +301,7 @@ export const withRunCheckpoint = (
               invocations: [],
               state: 'running',
               attempts: 1,
+              owner,
               createdAt: next.timestamp,
               updatedAt: next.timestamp
             }
@@ -275,13 +332,16 @@ export const withRunCheckpoint = (
               if (!(await commit())) {
                 // Stop before the gate and dispatch: the call is never made.
                 delete checkpoint.inFlight
-                failure = 'Progress could not be saved, so the next tool call was not made.'
+                failure = lost
+                  ? 'This run was resumed in another tab or window, so it stopped before its next tool call.'
+                  : 'Progress could not be saved, so the next tool call was not made.'
+                const saved = lost ? 'elsewhere' : 'not_saved'
                 yield event('error', { message: failure })
                 mode = 'off'
                 const session = await options.createSession()
                 yield event(
                   'assistant.done',
-                  session.replace(describeStoppedRun(checkpoint, failure, 'not_saved')) as never
+                  session.replace(describeStoppedRun(checkpoint, failure, saved)) as never
                 )
                 finished = true
                 return
@@ -334,7 +394,7 @@ export const withRunCheckpoint = (
       if (checkpoint && store) {
         if (finished && final && failure === undefined && stop === undefined) {
           // Completed: nothing left to resume.
-          if (written) await store.delete(conversationId).catch(() => {})
+          if (written && !lost) await store.delete(conversationId, owner).catch(() => false)
         } else if (written || checkpoint.invocations.length > 0 || checkpoint.inFlight) {
           checkpoint.state = 'stopped'
           checkpoint.stop = !finished

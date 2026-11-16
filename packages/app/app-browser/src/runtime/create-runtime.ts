@@ -15,6 +15,7 @@ import {
 import { toolInputJsonSchema } from '@tinytinkerer/contracts'
 import type {
   AgentType,
+  ChatEvent,
   McpDiscoveryResult,
   McpServerConfig,
   PluginActivationState,
@@ -167,6 +168,9 @@ export const createRuntime = (options: {
   checkpoints?: () => Promise<RunCheckpointStore>
   // Set only by an explicit Resume (see ChatRuntimeContext.resume).
   resume?: { turnId: string }
+  // The conversation's persisted events, read by a Resume as durable evidence
+  // of whether the saved run already finished.
+  conversationEvents?: () => Promise<readonly ChatEvent[]>
 }) => {
   // Read once into locals so the PluginHost below can be built with a narrowed,
   // definitely-present function rather than an optional call and a cast.
@@ -677,6 +681,7 @@ export const createRuntime = (options: {
     origins,
     tools: new Map(tools.map((tool) => [tool.id, tool.source])),
     ...(appPolicy?.recovery ? { recovery: appPolicy.recovery } : {}),
-    createSession: createAssistantContentSession
+    createSession: createAssistantContentSession,
+    ...(options.conversationEvents ? { events: options.conversationEvents } : {})
   })
 }

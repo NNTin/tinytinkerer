@@ -1,5 +1,5 @@
 import type { ConversationMessage, ToolInvocation } from '@tinytinkerer/app-core'
-import type { AgentType, ToolSource } from '@tinytinkerer/contracts'
+import type { AgentType, ChatEvent, ToolSource } from '@tinytinkerer/contracts'
 
 // Saved progress of one run (issue #531): what an explicit Resume needs to
 // continue that run's unfinished decision without repeating its tool calls.
@@ -56,14 +56,29 @@ export type RunCheckpoint = {
   stop?: string
   blocked?: RunCheckpointBlock
   attempts: number
+  // Fencing token of the run attempt that owns this record. Every write is a
+  // compare-and-swap on it, so of two tabs resuming the same progress only one
+  // can claim it, and a run whose record was claimed elsewhere stops before its
+  // next tool call.
+  owner: string
   createdAt: string
   updatedAt: string
 }
 
+/**
+ * Saved-progress storage. Both writes are atomic compare-and-swaps on the
+ * stored record's `owner` (one IndexedDB read-write transaction each, which
+ * the browser serializes across tabs and connections).
+ */
 export interface RunCheckpointStore {
   get(conversationId: string): Promise<unknown>
-  put(checkpoint: RunCheckpoint): Promise<void>
-  delete(conversationId: string): Promise<void>
+  /** Writes `checkpoint` iff the stored record's owner is `expectedOwner`
+   * (`undefined`: no record is stored). Returns whether it wrote. */
+  swap(checkpoint: RunCheckpoint, expectedOwner: string | undefined): Promise<boolean>
+  /** Deletes the record iff its owner is `expectedOwner`, or unconditionally
+   * without one. Returns false only when a record owned by someone else is
+   * left in place. */
+  delete(conversationId: string, expectedOwner?: string): Promise<boolean>
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -103,6 +118,8 @@ export const parseCheckpoint = (
     value.invocations.every(isInvocation) &&
     (value.inFlight === undefined || isCall(value.inFlight)) &&
     typeof value.attempts === 'number' &&
+    typeof value.owner === 'string' &&
+    typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'
   return valid
     ? { ok: true, checkpoint: value as RunCheckpoint }
@@ -145,12 +162,16 @@ export const assessCheckpoint = (
       `Resume continues ReAct runs only; this run used the ${checkpoint.agentType} agent. Its activity is kept, but nothing is repeated automatically.`
     )
   }
-  if (!(env.now - Date.parse(checkpoint.updatedAt) <= CHECKPOINT_TTL_MS)) {
+  // From creation, which no later write (attempt, refusal, stop) moves.
+  if (!(env.now - Date.parse(checkpoint.createdAt) <= CHECKPOINT_TTL_MS)) {
     return blocked('This saved progress has expired. Start a new request instead.')
   }
   if (checkpoint.account !== env.account) {
     return blocked(
-      'You are signed in differently than when this progress was saved, so access to its results cannot be confirmed. Sign in with the original account to resume.',
+      // The app keeps no stable account identity client-side, only the
+      // credential: a fresh sign-in issues a new token, even for the same
+      // account, so only the original credential can match.
+      'This progress was saved under a different sign-in. Only the credential it was saved with can be confirmed to have the same access; a new sign-in, even to the same account, cannot. Resume works again if that credential is restored (for example by the hosting page); otherwise start a new request.',
       true
     )
   }
@@ -182,6 +203,33 @@ export const assessCheckpoint = (
   }
 }
 
+/**
+ * Whether the persisted events show the turn's latest run finished: a final
+ * decision followed by its answer, with no failure or rate-limit stop. This is
+ * durable terminal evidence independent of the checkpoint itself, so progress
+ * whose cleanup failed is never offered again. A refused Resume (no step or
+ * tool activity) does not count as a new run.
+ */
+export const turnRunFinished = (events: readonly ChatEvent[], turnId: string): boolean => {
+  const start = events.findIndex((event) => event.id === turnId)
+  if (start < 0) return false
+  let final = false
+  let finished = false
+  let newRun = false
+  for (const event of events.slice(start + 1)) {
+    if (event.type === 'user.message') break
+    if (event.type === 'agent.run.started') newRun = true
+    else if (event.type.startsWith('agent.step.') || event.type.startsWith('agent.tool.')) {
+      if (newRun) final = finished = newRun = false
+      if (event.type === 'agent.step.completed' && event.payload.decisionKind === 'final') {
+        final = true
+      }
+    } else if (event.type === 'error' || event.type === 'rate.limit.cancelled') final = false
+    else if (event.type === 'assistant.done') finished = final
+  }
+  return finished
+}
+
 export const UNCERTAIN_CALL = (toolId: string): string =>
   `The last call (${toolId}) was sent, but its result never arrived and nothing could confirm whether it took effect. Repeating it could duplicate its effect, so recovery stopped here. Check the target system, then describe its current state in a new message.`
 
@@ -190,7 +238,7 @@ export const UNCERTAIN_CALL = (toolId: string): string =>
 export const describeStoppedRun = (
   checkpoint: Pick<RunCheckpoint, 'invocations' | 'agentType'>,
   cause: string,
-  saved: 'resumable' | 'too_large' | 'not_saved'
+  saved: 'resumable' | 'too_large' | 'not_saved' | 'elsewhere'
 ): string => {
   const lines = checkpoint.invocations.map(
     (call) => `- \`${call.toolId}\` — ${call.outcome.ok ? 'returned a result' : 'failed'}`
@@ -202,7 +250,9 @@ export const describeStoppedRun = (
         ? "This run's results are too large to save for Resume, so continuing means starting a new request."
         : saved === 'not_saved'
           ? 'Its progress could not be saved in this browser, so this run cannot be resumed.'
-          : 'Your progress is saved in this conversation. Choose **Resume** to continue from the unfinished step; the calls above are not repeated.'
+          : saved === 'elsewhere'
+            ? 'Its saved progress now belongs to the run continuing in another tab or window.'
+            : 'Your progress is saved in this conversation. Choose **Resume** to continue from the unfinished step; the calls above are not repeated.'
   return [
     `**This run stopped before it finished.** ${cause}`,
     `Completed before it stopped:\n${lines.join('\n')}`,

@@ -259,12 +259,31 @@ export const createBrowserPersistence = (
     }
   }
 
+  // Each write is one read-write transaction: IndexedDB serializes those
+  // across every connection to this database, so the owner check and the write
+  // are atomic even between tabs (issue #531).
   const runCheckpoints: RunCheckpointStore = {
     get: (conversationId) => db.runCheckpoints.get(conversationId),
-    async put(checkpoint) {
-      await db.runCheckpoints.put(checkpoint)
-    },
-    delete: (conversationId) => db.runCheckpoints.delete(conversationId)
+    swap: (checkpoint, expectedOwner) =>
+      db.transaction('rw', db.runCheckpoints, async () => {
+        const current = await db.runCheckpoints.get(checkpoint.conversationId)
+        if ((current as { owner?: unknown } | undefined)?.owner !== expectedOwner) return false
+        await db.runCheckpoints.put(checkpoint)
+        return true
+      }),
+    delete: (conversationId, expectedOwner) =>
+      db.transaction('rw', db.runCheckpoints, async () => {
+        const current = await db.runCheckpoints.get(conversationId)
+        if (
+          expectedOwner !== undefined &&
+          current !== undefined &&
+          (current as { owner?: unknown }).owner !== expectedOwner
+        ) {
+          return false
+        }
+        await db.runCheckpoints.delete(conversationId)
+        return true
+      })
   }
 
   return { conversations, preferences, authTokens, runCheckpoints }

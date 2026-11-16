@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import { useOptionalBrowserApp, type BrowserApp } from './app'
-import { parseCheckpoint } from './runtime/run-checkpoint'
+import { parseCheckpoint, turnRunFinished } from './runtime/run-checkpoint'
 
 type RecoveryView = { message: string; action?: string }
 
@@ -28,15 +28,26 @@ const Recovery = ({ turnId, prompt, app }: { turnId: string; prompt: string; app
   const chat = app.stores.chat
   const conversationId = useStore(chat, (state) => state.conversationId)
   const isRunning = useStore(chat, (state) => state.isRunning)
-  const eventCount = useStore(chat, (state) => state.events.length)
+  const events = useStore(chat, (state) => state.events)
   const cooldownUntil = useStore(chat, (state) => state.cooldownUntil)
   const resumeRun = useStore(chat, (state) => state.resumeRun)
   const [view, setView] = useState<RecoveryView>()
   const [requested, setRequested] = useState(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   useEffect(() => {
     setRequested(false)
-    if (!load || !conversationId || isRunning) return setView(undefined)
+    // A run the events show finished has nothing to resume, whatever the
+    // record says (its cleanup may have failed).
+    if (!load || !conversationId || isRunning || turnRunFinished(events, turnId)) {
+      return setView(undefined)
+    }
     let current = true
     void load()
       .then((store) => store.get(conversationId))
@@ -66,7 +77,7 @@ const Recovery = ({ turnId, prompt, app }: { turnId: string; prompt: string; app
     return () => {
       current = false
     }
-  }, [load, conversationId, turnId, isRunning, eventCount])
+  }, [load, conversationId, turnId, isRunning, events])
 
   if (!view || isRunning) return null
   return (
@@ -78,7 +89,13 @@ const Recovery = ({ turnId, prompt, app }: { turnId: string; prompt: string; app
           disabled={requested || Date.parse(cooldownUntil ?? '') > Date.now()}
           onClick={() => {
             setRequested(true)
-            void resumeRun(prompt, turnId, conversationId)
+            // Re-enable once the call settles: a Resume refused before it ran
+            // (declined disclosure, held latch, cooldown) changes nothing else
+            // this panel watches. A concurrent second call is still rejected
+            // by the store's run latch.
+            void resumeRun(prompt, turnId, conversationId).finally(
+              () => mounted.current && setRequested(false)
+            )
           }}
           className="rounded-md border border-[var(--border)] px-2 py-0.5 text-[var(--text)] hover:bg-[var(--panel-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >

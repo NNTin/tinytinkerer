@@ -17,15 +17,20 @@ import {
 
 const memoryStore = () => {
   const rows = new Map<string, unknown>()
+  const ownerOf = (id: string) => (rows.get(id) as { owner?: string } | undefined)?.owner
   const store: RunCheckpointStore = {
     get: (id) => Promise.resolve(structuredClone(rows.get(id))),
-    put: (record) => {
+    swap: (record, expected) => {
+      if (ownerOf(record.conversationId) !== expected) return Promise.resolve(false)
       rows.set(record.conversationId, structuredClone(record))
-      return Promise.resolve()
+      return Promise.resolve(true)
     },
-    delete: (id) => {
+    delete: (id, expected) => {
+      if (expected !== undefined && rows.has(id) && ownerOf(id) !== expected) {
+        return Promise.resolve(false)
+      }
       rows.delete(id)
-      return Promise.resolve()
+      return Promise.resolve(true)
     }
   }
   return { rows, store }
@@ -98,6 +103,7 @@ const checkpoint = (overrides: Partial<RunCheckpoint> = {}): RunCheckpoint => ({
   ],
   state: 'stopped',
   attempts: 1,
+  owner: 'o1',
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   ...overrides

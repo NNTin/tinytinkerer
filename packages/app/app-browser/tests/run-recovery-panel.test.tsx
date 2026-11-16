@@ -31,13 +31,13 @@ const saved = (overrides: Partial<RunCheckpoint> = {}): RunCheckpoint => ({
   ],
   state: 'stopped',
   attempts: 1,
+  owner: 'o1',
   createdAt: '',
   updatedAt: '',
   ...overrides
 })
 
-const mount = (record: unknown, turnId = 'u1') => {
-  const resumeRun = vi.fn(() => Promise.resolve())
+const mount = (record: unknown, turnId = 'u1', resumeRun = vi.fn(() => Promise.resolve())) => {
   const chat = createStore(() => ({
     conversationId: 'c1',
     isRunning: false,
@@ -69,6 +69,18 @@ describe('RunRecoveryPanel (issue #531)', () => {
     expect(resumeRun).toHaveBeenCalledWith('Make it', 'u1', 'c1')
     // A second click while the first is pending is ignored.
     expect(screen.getByRole('button', { name: 'Resume' })).toBeDisabled()
+  })
+
+  it('re-enables Resume when a request settles without a run (e.g. a declined disclosure)', async () => {
+    let settle!: () => void
+    const resumeRun = vi.fn(() => new Promise<void>((resolve) => (settle = resolve)))
+    mount(saved(), 'u1', resumeRun)
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume' }))
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeDisabled()
+    settle()
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    expect(resumeRun).toHaveBeenCalledTimes(2)
   })
 
   it('warns about an uncertain call before Resume checks it', async () => {

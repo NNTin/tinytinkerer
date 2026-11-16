@@ -50,7 +50,7 @@ const SERVER: McpServerConfig = {
 const TOOLS = ['create_project', 'add_parts', 'add_links', 'build_guide'] as const
 const PLAN = [...TOOLS, 'final'] as const
 
-type Fault = 'hang' | { rateLimitMs: number }
+type Fault = 'hang' | { rateLimitMs: number } | { gate: Promise<void> }
 
 const discovery = (tools: readonly string[] = TOOLS): Record<string, McpDiscoveryResult> => ({
   [SERVER.id]: {
@@ -207,7 +207,8 @@ const world = () => {
     decisions.push(body)
     const fault = faults.get(decisions.length)
     if (fault === 'hang') return hang(init.signal)
-    if (fault) return rateLimited(fault.rateLimitMs)
+    if (fault && 'gate' in fault) await fault.gate
+    else if (fault) return rateLimited(fault.rateLimitMs)
     const step = PLAN[request.messages.filter((message) => message.role === 'tool').length]!
     if (step === 'final') return final()
     const wire = request.tools
@@ -325,6 +326,7 @@ const browser = async (w: World, options: { recovery?: AppRunRecovery } = {}) =>
         },
         ...(context?.conversationId ? { conversationId: context.conversationId } : {}),
         checkpoints: () => Promise.resolve(page.runCheckpoints),
+        conversationEvents: () => page.conversations.loadConversationEvents(conversation.id),
         ...(resume ? { resume } : {})
       })
   })
@@ -335,9 +337,12 @@ const browser = async (w: World, options: { recovery?: AppRunRecovery } = {}) =>
   const latestTurnId = async () =>
     (await events()).filter((event) => event.type === 'user.message').at(-1)!.id
 
-  const run = (options: { prompt?: string; resume?: boolean; signal?: AbortSignal } = {}) => {
+  type Page = ReturnType<typeof open>
+  const run = (
+    options: { prompt?: string; resume?: boolean; signal?: AbortSignal; tab?: Page } = {}
+  ) => {
     const live: ChatEvent[] = []
-    const page = persistence
+    const page = options.tab ?? persistence
     const promise = (async () => {
       const existing = await events()
       const resume = options.resume ? { turnId: await latestTurnId() } : undefined
@@ -370,6 +375,8 @@ const browser = async (w: World, options: { recovery?: AppRunRecovery } = {}) =>
       persistence.kill()
       persistence = open()
     },
+    // A second tab: its own live connection to the same database.
+    tab: () => open(),
     store: () => persistence.runCheckpoints
   }
 }
@@ -533,7 +540,7 @@ describe('saved progress and explicit Resume (issue #531)', () => {
     [
       'different access',
       (b: Awaited<ReturnType<typeof browser>>) => (b.config.token = 'token-b'),
-      'signed in differently'
+      'saved under a different sign-in'
     ]
   ])(
     'blocks Resume after %s (retryable), then resumes once it is restored',
@@ -558,12 +565,108 @@ describe('saved progress and explicit Resume (issue #531)', () => {
     }
   )
 
+  it('measures expiry from creation: a refused Resume near the limit does not extend it', async () => {
+    const day = 24 * 60 * 60 * 1000
+    const w = world()
+    const b = await browser(w)
+    await failAfterGuide(w, b)
+    const created = (await b.checkpoint())!.createdAt
+
+    // Day 6: a refused (retryable) Resume rewrites the record.
+    vi.setSystemTime(Date.now() + 6 * day)
+    b.config.token = 'token-b'
+    await b.run({ resume: true })
+    expect((await b.checkpoint())!.blocked?.retryable).toBe(true)
+    expect((await b.checkpoint())!.createdAt).toBe(created)
+
+    // Day 8: access restored, but the progress is past its creation bound.
+    vi.setSystemTime(Date.now() + 2 * day)
+    b.config.token = 'token-a'
+    const before = w.decisions.length
+    await b.run({ resume: true })
+    expect(w.decisions).toHaveLength(before)
+    expect(notices(await b.events()).at(-1)).toContain('has expired')
+  })
+
+  it('lets only one of two tabs resume the same progress, so the next mutation is made once', async () => {
+    const w = world()
+    const b = await browser(w)
+    w.faults.set(3, 'hang')
+    await b.run()
+    expect((await b.checkpoint())!.invocations).toHaveLength(2)
+
+    // Two live connections resume at the same moment.
+    const other = b.tab()
+    const first = b.start({ resume: true })
+    const second = b.start({ resume: true, tab: other })
+    await drive(Promise.all([first.promise, second.promise]))
+
+    expect(w.mcpCalls.filter((call) => call.tool === 'add_links')).toHaveLength(1)
+    expect(mutations(w)).toEqual(['create_project', 'add_parts', 'add_links'])
+    const refused = [first.live, second.live].filter((live) =>
+      notices(live).some((notice) => notice.includes('already being resumed in another tab'))
+    )
+    expect(refused).toHaveLength(1)
+    expect(await b.checkpoint()).toBeUndefined()
+  })
+
+  it('stops a run whose progress was claimed elsewhere before its next tool call', async () => {
+    const w = world()
+    const b = await browser(w)
+    w.faults.set(3, 'hang')
+    await b.run()
+    let release!: () => void
+    w.faults.set(4, { gate: new Promise<void>((resolve) => (release = resolve)) })
+
+    const resumed = b.start({ resume: true })
+    await until(() => Promise.resolve(w.decisions.length === 4))
+    // Another tab claims the record while this run waits for its decision.
+    const saved = (await b.checkpoint())!
+    expect(await b.store().swap({ ...saved, owner: 'other-tab' }, saved.owner)).toBe(true)
+    release()
+    await drive(resumed.promise)
+
+    expect(w.mcpCalls.filter((call) => call.tool === 'add_links')).toHaveLength(0)
+    expect(
+      resumed.live.some(
+        (event) =>
+          event.type === 'error' &&
+          event.payload.message.includes('resumed in another tab or window')
+      )
+    ).toBe(true)
+    expect((await b.checkpoint())!.owner).toBe('other-tab')
+  })
+
+  it('never resumes a run that finished, even when deleting its progress failed', async () => {
+    const w = world()
+    const b = await browser(w)
+    const store = b.store()
+    const remove = store.delete.bind(store)
+    // Only the completion cleanup (an owner-checked delete) fails.
+    vi.spyOn(store, 'delete').mockImplementation((id, owner) =>
+      owner === undefined ? remove(id) : Promise.reject(new Error('storage gone'))
+    )
+    await b.run()
+    expect(answers(await b.events()).at(-1)).toBe('Summary.')
+    expect((await b.checkpoint())!.invocations).toHaveLength(4)
+
+    b.reload()
+    const before = w.decisions.length
+    await b.run({ resume: true })
+    expect(w.decisions).toHaveLength(before)
+    expect(w.mcpCalls).toHaveLength(4)
+    expect(notices(await b.events()).at(-1)).toBe(
+      'Resume stopped: this run already finished, so there is nothing left to resume.'
+    )
+    expect(await b.checkpoint()).toBeUndefined()
+  })
+
   it('refuses an incompatible checkpoint version and keeps it as evidence', async () => {
     const w = world()
     const b = await browser(w)
     await failAfterGuide(w, b)
     const saved = (await b.checkpoint())!
-    await b.store().put({ ...saved, version: 2 } as unknown as RunCheckpoint)
+    await b.store().swap({ ...saved, version: 2 } as unknown as RunCheckpoint, saved.owner)
     const before = w.decisions.length
 
     await b.run({ resume: true })
@@ -703,29 +806,28 @@ describe('saved progress and explicit Resume (issue #531)', () => {
   })
 
   it('tells the truth when progress cannot be saved', async () => {
-    // put fails, delete succeeds: no record exists, so the call may proceed,
+    // A write fails, the delete succeeds: no record exists, so the call may proceed,
     // and the partial answer says the run cannot be resumed.
     {
       const w = world()
       const b = await browser(w)
-      vi.spyOn(b.store(), 'put').mockRejectedValue(new Error('QuotaExceededError'))
+      vi.spyOn(b.store(), 'swap').mockRejectedValue(new Error('QuotaExceededError'))
       await failAfterGuide(w, b)
       expect(w.mcpCalls).toHaveLength(4)
       expect(await b.checkpoint()).toBeUndefined()
       expect(answers(await b.events()).at(-1)).toContain('could not be saved in this browser')
     }
-    // put and delete both fail after the first call: the stale record still
+    // Writes and deletes both fail after the first call: the stale record still
     // truthfully says "one call done", so the next call is NOT made.
     {
       const w = world()
       const b = await browser(w)
       const store = b.store()
-      const put = store.put.bind(store)
+      const swap = store.swap.bind(store)
       let writes = 0
-      vi.spyOn(store, 'put').mockImplementation(async (record) => {
+      vi.spyOn(store, 'swap').mockImplementation((record, expected) => {
         writes += 1
-        if (writes > 2) throw new Error('storage gone')
-        await put(record)
+        return writes > 2 ? Promise.reject(new Error('storage gone')) : swap(record, expected)
       })
       vi.spyOn(store, 'delete').mockRejectedValue(new Error('storage gone'))
       await b.run()

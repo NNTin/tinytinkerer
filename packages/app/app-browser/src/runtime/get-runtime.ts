@@ -86,7 +86,13 @@ export const createBrowserRuntimeFactory = (options: {
         ...(options.shell.loadRunCheckpoints
           ? { checkpoints: options.shell.loadRunCheckpoints }
           : {}),
-        ...(context?.resume ? { resume: context.resume } : {})
+        ...(context?.resume ? { resume: context.resume } : {}),
+        ...(context?.conversationId
+          ? {
+              conversationEvents: () =>
+                options.shell.conversations.loadConversationEvents(context.conversationId!)
+            }
+          : {})
       })
     }
   }
