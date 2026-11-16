@@ -30,8 +30,12 @@ export {
 export type {
   AppAssistantPolicy,
   AppInstructionBoundary,
+  AppReconcileResult,
+  AppRecoveryVerdict,
+  AppRunRecovery,
   AppSignIn,
   AppToolResultRecord,
+  AppUncertainToolCall,
   BrowserApp,
   BrowserAuthMode,
   BrowserShell,
@@ -47,6 +51,13 @@ export type {
   ToolTreeSummarizer,
   ToolTreeView
 } from '@tinytinkerer/app-browser'
+
+// ── Saved progress and Resume (#531) ───────────────────────────────────────
+// `AppAssistantPolicy.recovery` lets a host revalidate saved results and
+// reconcile an uncertain call before an explicit Resume continues a run. See
+// docs/architecture/run-checkpoints.md.
+export { RUN_CHECKPOINT_VERSION } from '@tinytinkerer/app-browser'
+export type { RunCheckpoint } from '@tinytinkerer/app-browser'
 
 // ── Signing in on the host's origin (#510 T5) ───────────────────────────────
 // `authMode: 'oauth'` makes sign-in required; the host completes GitHub's

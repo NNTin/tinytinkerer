@@ -5,6 +5,7 @@ import type {
   StatusGateway
 } from '@tinytinkerer/app-core'
 import type { SystemStatus } from '@tinytinkerer/contracts'
+import type { RunCheckpointStore } from './runtime/run-checkpoint'
 import {
   resolveBrowserShellConfig,
   type BrowserShellConfig,
@@ -24,6 +25,10 @@ export type BrowserShell = {
   preferences: PreferencesStore
   authTokens: AuthTokenStore
   statusGateway: StatusGateway
+  // Saved run progress for explicit Resume (issue #531), in the same database
+  // as the conversations. Optional: a shell without it saves nothing and
+  // refuses every Resume.
+  loadRunCheckpoints?: () => Promise<RunCheckpointStore>
 }
 
 const isServiceStatus = (value: unknown): value is SystemStatus['auth'] => {
@@ -94,11 +99,13 @@ const createStatusGateway = (config: ResolvedBrowserShellConfig): StatusGateway 
 const createLazyPersistence = (
   storageNamespace: string,
   hostToken: string | null
-): Pick<BrowserShell, 'conversations' | 'preferences' | 'authTokens'> => {
+): Pick<BrowserShell, 'conversations' | 'preferences' | 'authTokens'> &
+  Required<Pick<BrowserShell, 'loadRunCheckpoints'>> => {
   let persistencePromise: Promise<{
     conversations: ConversationRepository
     preferences: PreferencesStore
     authTokens: AuthTokenStore
+    runCheckpoints: RunCheckpointStore
   }> | null = null
 
   const loadPersistence = async () => {
@@ -162,7 +169,12 @@ const createLazyPersistence = (
     }
   }
 
-  return { conversations, preferences, authTokens }
+  return {
+    conversations,
+    preferences,
+    authTokens,
+    loadRunCheckpoints: async () => (await loadPersistence()).runCheckpoints
+  }
 }
 
 export const createBrowserShell = (config: BrowserShellConfig): BrowserShell => {
@@ -174,6 +186,7 @@ export const createBrowserShell = (config: BrowserShellConfig): BrowserShell => 
     conversations: persistence.conversations,
     preferences: persistence.preferences,
     authTokens: persistence.authTokens,
+    loadRunCheckpoints: persistence.loadRunCheckpoints,
     statusGateway: createStatusGateway(resolved)
   }
 }

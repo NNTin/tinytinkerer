@@ -2,7 +2,7 @@ import type { Turn } from '@tinytinkerer/app-core'
 import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AssistantContent } from './assistant-content'
 import { toolResultsFromActivity } from './assistant-content-policy'
-import { ThinkingDots, toolLabel } from './turn-activity-panel'
+import { RunRecovery, ThinkingDots, toolLabel } from './turn-activity-panel'
 
 const CopyIcon = () => (
   <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
@@ -223,8 +223,13 @@ export const TurnChrome = memo(function TurnChrome({
     [turn.activity.items]
   )
 
+  // The latest settled turn (the only one given Regenerate) may have saved
+  // progress to resume, even with no answer (a cancelled run).
+  const recovery =
+    onRegenerateLatest && !isLive ? <RunRecovery turnId={turn.id} prompt={turn.userText} /> : null
+
   if (!turn.assistantContent && !isLive) {
-    return null
+    return recovery
   }
 
   const status = isLive && showStatusLine ? deriveTurnStatus(turn, serverNameById) : null
@@ -267,6 +272,7 @@ export const TurnChrome = memo(function TurnChrome({
               {...(onRegenerateLatest ? { onRegenerateLatest, canRegenerateLatest } : {})}
             />
           ) : null}
+          {recovery}
         </>
       ) : (
         // Live turn with no content yet: the status line above already conveys

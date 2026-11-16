@@ -38,6 +38,10 @@ export { RuntimeTimeoutError, isRuntimeTimeoutError } from '@tinytinkerer/agent-
 // documents or clamps its own `maxIterations` reads the one source of truth.
 export { DEFAULT_MAX_ITERATIONS } from '@tinytinkerer/agent-core'
 
+// The runtime's event constructor (shared monotonic `seq`), so a host decorator
+// that adds events to a run (#531 checkpointing) replays in emission order.
+export { createEvent } from '@tinytinkerer/agent-core'
+
 // Re-export the plugin runtime surface so app-browser composes plugins through
 // the app-core boundary, mirroring how `Tool` is surfaced here.
 export { PluginRegistry, isPluginModule } from '@tinytinkerer/agent-core'

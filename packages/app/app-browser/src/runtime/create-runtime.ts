@@ -38,6 +38,8 @@ import {
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 import { createToolFailureTelemetryHook } from './tool-failure-telemetry'
+import { withRunCheckpoint } from './checkpointing-runtime'
+import { fingerprint, type RunCheckpointStore } from './run-checkpoint'
 
 // The code-exec plugin's tool id — the ONE host↔plugin coupling the plugin system
 // deliberately keeps (documented in docs/plugin-infrastructure.md as the dom-snapshot
@@ -160,6 +162,11 @@ export const createRuntime = (options: {
   // should lose the capability loudly rather than quietly acquire another
   // session's.
   requestHumanInput?: (view: HumanPromptView, conversationId?: string) => Promise<HumanPromptResult>
+  // This conversation's saved-progress store (issue #531). Absent: nothing is
+  // saved, and a Resume is refused rather than run as a fresh prompt.
+  checkpoints?: () => Promise<RunCheckpointStore>
+  // Set only by an explicit Resume (see ChatRuntimeContext.resume).
+  resume?: { turnId: string }
 }) => {
   // Read once into locals so the PluginHost below can be built with a narrowed,
   // definitely-present function rather than an optional call and a cast.
@@ -520,7 +527,26 @@ export const createRuntime = (options: {
   const policyFinalizeAnswer = appPolicy?.finalizeAnswer
   const hostMcpNote = options.hostMcpNote
 
-  return createChatRuntime({
+  const createAssistantContentSession = async (initialSource = '') => {
+    const { createMarkdownContentSession } = await import('@tinytinkerer/content-markdown')
+    const session = createMarkdownContentSession(initialSource)
+    return {
+      append(chunk: string) {
+        const snapshot = session.append(chunk)
+        return { source: snapshot.source, content: snapshot.document }
+      },
+      replace(source: string) {
+        const snapshot = session.replace(source)
+        return { source: snapshot.source, content: snapshot.document }
+      },
+      snapshot() {
+        const snapshot = session.snapshot()
+        return { source: snapshot.source, content: snapshot.document }
+      }
+    }
+  }
+
+  const runtime = createChatRuntime({
     ...(policyFinalizeAnswer
       ? {
           // agent-core hands over the run's whole ExecutionContext; the policy
@@ -620,25 +646,37 @@ export const createRuntime = (options: {
         fingerprint: ['agent-runtime', fingerprintMessage(error.message)]
       })
     },
-    createAssistantContentSession: async (initialSource = '') => {
-      const { createMarkdownContentSession } = await import('@tinytinkerer/content-markdown')
-      const session = createMarkdownContentSession(initialSource)
-      return {
-        append(chunk) {
-          const snapshot = session.append(chunk)
-          return { source: snapshot.source, content: snapshot.document }
-        },
-        replace(source) {
-          const snapshot = session.replace(source)
-          return { source: snapshot.source, content: snapshot.document }
-        },
-        snapshot() {
-          const snapshot = session.snapshot()
-          return { source: snapshot.source, content: snapshot.document }
-        }
-      }
-    },
+    createAssistantContentSession,
     tools,
     hooks
+  })
+
+  // Saved progress and explicit Resume (issue #531) are conversation-scoped;
+  // a headless run with no conversation keeps no checkpoint.
+  if (conversationId === undefined && !options.resume) return runtime
+  // Fingerprints of the access this run uses, compared by a later Resume: the
+  // credential, and the address of each MCP server whose tools registered
+  // (host servers win an id clash, exactly as addTool does above).
+  const origins = async () => {
+    const result: Record<string, string> = {}
+    for (const { server, disc } of mcpSources) {
+      if (server.enabled && disc && !disc.error && !(server.id in result)) {
+        result[server.id] = await fingerprint(server.url)
+      }
+    }
+    return result
+  }
+  return withRunCheckpoint(runtime, {
+    store: options.checkpoints,
+    conversationId: conversationId ?? '',
+    ...(options.resume ? { resume: options.resume } : {}),
+    account: async () => {
+      const token = options.getToken()
+      return token ? fingerprint(token) : 'anonymous'
+    },
+    origins,
+    tools: new Map(tools.map((tool) => [tool.id, tool.source])),
+    ...(appPolicy?.recovery ? { recovery: appPolicy.recovery } : {}),
+    createSession: createAssistantContentSession
   })
 }

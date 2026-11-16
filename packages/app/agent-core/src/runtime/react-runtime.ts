@@ -11,6 +11,7 @@ export class ReActRuntime extends AgentRuntimeBase {
   async *run(prompt: string, options: RunOptions = {}): AsyncGenerator<ChatEvent> {
     const { signal } = options
     const context: ExecutionContext = this.createContext(prompt, options.history ?? [])
+    context.toolInvocations.push(...(options.restoredInvocations ?? []))
 
     yield createEvent('user.message', { text: prompt })
     yield createEvent('agent.run.started', { agentType: 'react' })

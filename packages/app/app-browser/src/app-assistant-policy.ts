@@ -115,4 +115,63 @@ export type AppAssistantPolicy = {
   prepareRenderedContent?: (input: {
     results: readonly AppToolResultRecord[]
   }) => (document: ContentDocument) => ContentDocument
+
+  /**
+   * How saved progress may be resumed (issue #531). Absent: Resume still
+   * validates tools, provenance and access, but cannot confirm artifacts or an
+   * unconfirmed call, so it blocks whenever a call's outcome is uncertain.
+   */
+  recovery?: AppRunRecovery
+}
+
+/**
+ * A host's answer about saved results before a Resume uses them (#531).
+ * `reason` is shown to the reader, so it must not contain capability-bearing
+ * references (artifact ids, download URLs).
+ */
+export type AppRecoveryVerdict = { ok: true } | { ok: false; reason: string }
+
+/**
+ * A tool call that was dispatched, but whose result was never recorded (the
+ * page reloaded or the run was cancelled mid-call). It may or may not have
+ * taken effect, so it is never repeated automatically.
+ */
+export type AppUncertainToolCall = {
+  toolId: string
+  input: Record<string, unknown>
+  source?: ToolSource
+}
+
+/**
+ * What a host could establish about an {@link AppUncertainToolCall}:
+ * `completed` supplies the call's authoritative result (recorded with the
+ * call's original host-stamped `source`), `not_executed` proves it had no
+ * effect, and `unknown` blocks the Resume. Never guess `not_executed`.
+ */
+export type AppReconcileResult =
+  | { status: 'completed'; output: unknown }
+  | { status: 'not_executed' }
+  | { status: 'unknown' }
+
+/**
+ * Generic host hooks consulted by an explicit Resume (#531), after the
+ * runtime's own checks pass and before any model request. `results` are the
+ * saved successful results, full outputs and `source` included. Both are
+ * optional, may reject (Resume then blocks and can be retried), and receive
+ * the run's abort signal.
+ */
+export type AppRunRecovery = {
+  /** Confirm the artifacts the saved results refer to still exist and are
+   * reachable with the current access. */
+  revalidate?: (input: {
+    results: readonly AppToolResultRecord[]
+    signal?: AbortSignal
+  }) => Promise<AppRecoveryVerdict>
+  /** Establish the outcome of the one uncertain call, e.g. by looking the
+   * effect up, or through the tool's own idempotency protocol. */
+  reconcile?: (input: {
+    call: AppUncertainToolCall
+    results: readonly AppToolResultRecord[]
+    signal?: AbortSignal
+  }) => Promise<AppReconcileResult>
 }

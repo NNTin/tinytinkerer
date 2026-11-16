@@ -82,7 +82,11 @@ export const createBrowserRuntimeFactory = (options: {
         ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
         ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
         ...(options.requestHumanInput ? { requestHumanInput: options.requestHumanInput } : {}),
-        ...(context?.conversationId ? { conversationId: context.conversationId } : {})
+        ...(context?.conversationId ? { conversationId: context.conversationId } : {}),
+        ...(options.shell.loadRunCheckpoints
+          ? { checkpoints: options.shell.loadRunCheckpoints }
+          : {}),
+        ...(context?.resume ? { resume: context.resume } : {})
       })
     }
   }

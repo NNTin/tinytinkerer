@@ -9,6 +9,7 @@ import {
   type PreferencesStore
 } from '@tinytinkerer/app-core'
 import { assignNodeIds } from '@tinytinkerer/content-react'
+import type { RunCheckpoint, RunCheckpointStore } from './runtime/run-checkpoint'
 
 type Preference = {
   key: string
@@ -19,6 +20,7 @@ class TinyTinkererDb extends Dexie {
   conversations!: EntityTable<Conversation, 'id'>
   events!: EntityTable<PersistedEvent, 'id'>
   preferences!: EntityTable<Preference, 'key'>
+  runCheckpoints!: EntityTable<RunCheckpoint, 'conversationId'>
 
   constructor(name: string) {
     super(name)
@@ -152,6 +154,15 @@ class TinyTinkererDb extends Dexie {
           })
         }
       })
+    // Saved run progress for explicit Resume (issue #531): at most one record
+    // per conversation, removed with the conversation's events. The record's
+    // own `version` governs compatibility, independent of this schema version.
+    this.version(4).stores({
+      conversations: 'id,updatedAt',
+      events: 'id,conversationId,timestamp',
+      preferences: 'key',
+      runCheckpoints: 'conversationId'
+    })
   }
 }
 
@@ -162,6 +173,7 @@ export const createBrowserPersistence = (
   conversations: ConversationRepository
   preferences: PreferencesStore
   authTokens: AuthTokenStore
+  runCheckpoints: RunCheckpointStore
 } => {
   const db = new TinyTinkererDb(storageNamespace)
 
@@ -203,6 +215,8 @@ export const createBrowserPersistence = (
       await db.conversations.update(event.conversationId, { updatedAt: event.timestamp })
     },
     async clearConversationEvents(conversationId) {
+      // Saved progress first: it must never outlive the turn it continues.
+      await db.runCheckpoints.delete(conversationId)
       await db.events.where('conversationId').equals(conversationId).delete()
     },
     async listConversations() {
@@ -218,8 +232,9 @@ export const createBrowserPersistence = (
       })
     },
     async deleteConversation(conversationId) {
-      // Events first, so an interruption leaves at worst an empty
-      // conversation row (harmless) rather than orphaned events.
+      // Saved progress, then events, so an interruption leaves at worst an
+      // empty conversation row (harmless) rather than orphaned data.
+      await db.runCheckpoints.delete(conversationId)
       await db.events.where('conversationId').equals(conversationId).delete()
       await db.conversations.delete(conversationId)
     },
@@ -244,5 +259,13 @@ export const createBrowserPersistence = (
     }
   }
 
-  return { conversations, preferences, authTokens }
+  const runCheckpoints: RunCheckpointStore = {
+    get: (conversationId) => db.runCheckpoints.get(conversationId),
+    async put(checkpoint) {
+      await db.runCheckpoints.put(checkpoint)
+    },
+    delete: (conversationId) => db.runCheckpoints.delete(conversationId)
+  }
+
+  return { conversations, preferences, authTokens, runCheckpoints }
 }

@@ -98,35 +98,37 @@ Code on your startup path, such as finishing GitHub's sign-in redirect or instal
 controller when your editor mounts, imports a subpath instead. See
 [Eager code and lazy code](#eager-code-and-lazy-code) for what each entry costs.
 
-| Export                                  | What it is                                                                                             |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `resolveBrowserShellBootstrapConfig`    | Builds the shell config (edge URL, storage namespace, auth mode, theme)                                |
-| `createBrowserApp`                      | Builds one assistant app: stores, plugins, your tool group                                             |
-| `BrowserAppShell`                       | Boots the app and provides it to everything inside it                                                  |
-| `ChatApp`                               | The chat surface, in a floating or docked layout                                                       |
-| `completeGitHubOAuth`                   | Completes GitHub's redirect back to your page and signs the app in ([host sign-in](./host-sign-in.md)) |
-| `GITHUB_OAUTH_CALLBACK_PATH`            | The callback path to use as `githubRedirectUri`: `/auth/github/callback`                               |
-| `isGitHubOAuthCallback`                 | Whether a URL (default: the current location) is that callback                                         |
-| `isSignInRequired`                      | Whether an app's shell requires sign-in before it answers (`authMode: 'oauth'`)                        |
-| `createStageTools`                      | Turns a request handle plus a method table into `Tool`s, as the integrated stages do                   |
-| `createStageControllerHandle`           | A stable handle your tools call, for a controller that mounts later                                    |
-| `z`                                     | The Zod instance the runtime reads tool schemas with                                                   |
-| `loadPlugins`, `CATALOGUE_PLUGIN_NAMES` | The plugin catalogue: load a named subset, or list every name                                          |
-| `genericToolTreeSummarizer`             | The fallback tool-picker mapper for an app with its own tools                                          |
-| `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES`  | The `documentGlobals` value for a page that owns everything                                            |
-| `EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES` | The `documentGlobals` value for an embedding host: all four `false`                                    |
-| `NO_GLOBAL_HOST_CAPABILITIES`           | The `globalHosts` value for a shell that mounts no document-level dialogs                              |
-| `useHostMcp`                            | React hook over `app.stores.hostMcp`: your MCP servers and their discovery status                      |
-| `hostMcpServerStatus`                   | One host server's status: `syncing`, `signed-out`, `available` or `unavailable` (with its error)       |
-| `retryHostMcpDiscovery`                 | Re-runs discovery of your MCP servers with the current token                                           |
+| Export                                  | What it is                                                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `resolveBrowserShellBootstrapConfig`    | Builds the shell config (edge URL, storage namespace, auth mode, theme)                                       |
+| `createBrowserApp`                      | Builds one assistant app: stores, plugins, your tool group                                                    |
+| `BrowserAppShell`                       | Boots the app and provides it to everything inside it                                                         |
+| `ChatApp`                               | The chat surface, in a floating or docked layout                                                              |
+| `completeGitHubOAuth`                   | Completes GitHub's redirect back to your page and signs the app in ([host sign-in](./host-sign-in.md))        |
+| `GITHUB_OAUTH_CALLBACK_PATH`            | The callback path to use as `githubRedirectUri`: `/auth/github/callback`                                      |
+| `isGitHubOAuthCallback`                 | Whether a URL (default: the current location) is that callback                                                |
+| `isSignInRequired`                      | Whether an app's shell requires sign-in before it answers (`authMode: 'oauth'`)                               |
+| `createStageTools`                      | Turns a request handle plus a method table into `Tool`s, as the integrated stages do                          |
+| `createStageControllerHandle`           | A stable handle your tools call, for a controller that mounts later                                           |
+| `z`                                     | The Zod instance the runtime reads tool schemas with                                                          |
+| `loadPlugins`, `CATALOGUE_PLUGIN_NAMES` | The plugin catalogue: load a named subset, or list every name                                                 |
+| `genericToolTreeSummarizer`             | The fallback tool-picker mapper for an app with its own tools                                                 |
+| `DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES`  | The `documentGlobals` value for a page that owns everything                                                   |
+| `EMBEDDED_DOCUMENT_GLOBAL_CAPABILITIES` | The `documentGlobals` value for an embedding host: all four `false`                                           |
+| `NO_GLOBAL_HOST_CAPABILITIES`           | The `globalHosts` value for a shell that mounts no document-level dialogs                                     |
+| `useHostMcp`                            | React hook over `app.stores.hostMcp`: your MCP servers and their discovery status                             |
+| `hostMcpServerStatus`                   | One host server's status: `syncing`, `signed-out`, `available` or `unavailable` (with its error)              |
+| `retryHostMcpDiscovery`                 | Re-runs discovery of your MCP servers with the current token                                                  |
+| `RUN_CHECKPOINT_VERSION`                | Version of the saved-progress record a Resume reads ([Saved progress and Resume](#saved-progress-and-resume)) |
 
 Types: `AppTool`, `AppToolGroup`, `AppToolRunBindings`, `AppToolRunImplementation`, `Tool`,
 `ActivitySummarizer`, `ActivityStatus`, `ActivityView`, `ActivityViewSection`, `AppAssistantPolicy`,
-`AppInstructionBoundary`, `AppToolResultRecord`, `AppSignIn`, `BrowserApp`, `BrowserAppShellProps`,
+`AppInstructionBoundary`, `AppReconcileResult`, `AppRecoveryVerdict`, `AppRunRecovery`, `AppToolResultRecord`,
+`AppUncertainToolCall`, `AppSignIn`, `BrowserApp`, `BrowserAppShellProps`,
 `BrowserAuthMode`, `BrowserShell`, `BrowserShellBootstrapOptions`, `BrowserShellConfig`, `CataloguePluginName`,
 `ChatAppProps`, `ChatDockEdge`, `ChatLoadingComponent`, `ChatMode`, `ChatPresentation`,
 `ConversationResetBehavior`, `CreateControllerStageToolsOptions`, `CreateStageToolsOptions`, `DocumentGlobalCapabilities`,
-`GlobalHostCapabilities`, `HostMcpServer`, `HostMcpServerStatus`, `HostMcpState`, `HostMcpStore`, `PluginCatalogue`, `PreSendDisclosure`, `ShellThemeTokens`,
+`GlobalHostCapabilities`, `HostMcpServer`, `HostMcpServerStatus`, `HostMcpState`, `HostMcpStore`, `PluginCatalogue`, `PreSendDisclosure`, `RunCheckpoint`, `ShellThemeTokens`,
 `StageControllerHandle`, `StageControllerMethod`, `StageToolDefinition`, `StageToolRequestHandle`, `ToolTreeSummarizer`, `ToolTreeView`.
 
 Two subpath exports carry the stylesheets: `@nntin/tinytinkerer-embed/embed.css` and
@@ -322,6 +324,41 @@ A tool is missing from `toolIds` when:
 
 Each id appears once. If two tools claim one id, only the first registered is listed, under that
 id. Check a result's `source` when you need to know which one ran.
+
+### Saved progress and Resume
+
+When a ReAct run fails after some tool calls succeeded, for example because a model decision timed
+out, the assistant keeps those results and offers the reader an explicit **Resume** on the latest
+turn. Resume continues the unfinished step and repeats no completed call. Before it makes any
+request, it checks the saved calls against the current session: the same tools with the same
+sources and MCP server addresses, and the same access. See
+[Saved progress and Resume](../architecture/run-checkpoints.md) for the full contract.
+
+Two optional hooks on `appAssistantPolicy.recovery` let your app take part:
+
+- `revalidate({ results, signal })` confirms that the artifacts the saved results refer to still
+  exist and can be reached. `results` carries full outputs and `source`. Return
+  `{ ok: false, reason }` to block the Resume, for example when a project has been deleted or
+  has expired. `reason` is shown to the reader, so leave capability-bearing ids and URLs out of
+  it.
+- `reconcile({ call, results, signal })` decides a call that was sent but never answered, for
+  example when the page reloaded mid-call. Return `completed` with the call's real result,
+  `not_executed` only if you can prove it had no effect, or `unknown`. Without this hook, such a
+  call always blocks the Resume.
+
+```ts
+appAssistantPolicy: {
+  recovery: {
+    revalidate: async ({ results }) =>
+      (await projectStillExists(results))
+        ? { ok: true }
+        : { ok: false, reason: 'The saved project no longer exists.' }
+  }
+}
+```
+
+The saved record is conversation state in the app's own IndexedDB. It is never sent to
+telemetry, and conversation delete or reset removes it together with the events.
 
 ### Tools
 
